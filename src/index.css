@@ -97,7 +97,23 @@
     @apply border-border;
   }
 
+  html {
+    min-height: 100%;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+  }
+
   body {
+    min-height: 100vh;
+    overflow-y: auto;
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .conic-gradient-stem {
+    background:
+      conic-gradient(from 180deg, #22d3ee, #a78bfa, #f472b6, #facc15, #22c55e, #22d3ee);
+    box-shadow: 0 0 40px rgba(34, 211, 238, 0.35);
   }
 }

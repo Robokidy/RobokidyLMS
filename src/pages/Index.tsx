@@ -1,9 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Play, ChevronRight, Book, Code, Trophy, CheckCircle, Terminal } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Play, ChevronRight, Book, Code, Trophy, CheckCircle, Terminal, Moon, Sun, Sparkles, FileText } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/api/client";
+import { useTheme } from "next-themes";
+import { rankLadder } from "@/data/stemEcosystem";
 
 interface Lesson {
   id: string;
@@ -25,6 +32,8 @@ interface Lesson {
 }
 
 const Index = () => {
+  const { token, user, logout } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [selectedLesson, setSelectedLesson] = useState<string>('programming-importance');
   const [code, setCode] = useState('# Welcome to Python Learning!\nprint("Hello, World!")');
   const [practiceCode, setPracticeCode] = useState('# Practice Python here!\nprint("Let\'s start coding!")');
@@ -32,22 +41,47 @@ const Index = () => {
   const [practiceOutput, setPracticeOutput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isPracticeLoading, setIsPracticeLoading] = useState(false);
-  const [pyodide, setPyodide] = useState<any>(null);
   const [quizAnswers, setQuizAnswers] = useState<{[key: string]: number}>({});
   const [quizResults, setQuizResults] = useState<{[key: string]: boolean}>({});
+  const [studentDashboard, setStudentDashboard] = useState<{ totalLessons: number; completedLessons: number; quizAttempts: number; codeRunCount: number } | null>(null);
+  const [pendingTopics, setPendingTopics] = useState(0);
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [progressDetail, setProgressDetail] = useState<any>(null);
+  const [dbLessonsList, setDbLessonsList] = useState<Array<{ _id: string; title: string }>>([]);
+  const [backendQuizQuestions, setBackendQuizQuestions] = useState<Array<{ question: string; options: string[]; correct: number }>>([]);
 
   useEffect(() => {
-    const initializePyodide = async () => {
+    const loadStudentSummary = async () => {
       try {
-        const pyodideInstance = await (window as any).loadPyodide();
-        setPyodide(pyodideInstance);
-        console.log('Pyodide loaded successfully');
-      } catch (error) {
-        console.error('Failed to load Pyodide:', error);
+        const [dashboard, progress, dbLessons] = await Promise.all([
+          apiFetch("/student/dashboard", {}, token),
+          apiFetch("/student/progress", {}, token),
+          apiFetch("/student/lessons", {}, token)
+        ]);
+        setStudentDashboard(dashboard);
+        setProgressDetail(progress);
+        setDbLessonsList(dbLessons || []);
+        const attemptedTopicCount = (progress?.quizAttempts || []).length;
+        const topicsTotal = (dbLessons || []).length;
+        setPendingTopics(Math.max(0, topicsTotal - attemptedTopicCount));
+      } catch {
+        setStudentDashboard(null);
       }
     };
-    initializePyodide();
-  }, []);
+    if (token) loadStudentSummary();
+  }, [token]);
+
+  const topicRows = dbLessonsList.map((lesson) => {
+    const completed = (progressDetail?.completedLessons || []).some((id: string) => String(id) === String(lesson._id));
+    const quiz = (progressDetail?.quizAttempts || []).find((q: any) => String(q.lessonId) === String(lesson._id));
+    return {
+      title: lesson.title,
+      completed,
+      attempts: quiz?.attempts || 0,
+      bestScore: quiz?.bestScore ?? null,
+      lastScore: quiz?.lastAttemptScore ?? null
+    };
+  });
 
   const lessons: Lesson[] = [
     {
@@ -2464,36 +2498,24 @@ for name, func in operations.items():
     }
   ];
 
-  const runCode = async () => {
-    if (!pyodide) {
-      setOutput('Pyodide is still loading. Please wait...');
-      return;
-    }
+  const lessonIdByLocalId = useMemo(() => {
+    const map: Record<string, string> = {};
+    lessons.forEach((lesson, index) => {
+      if (dbLessonsList[index]?._id) {
+        map[lesson.id] = dbLessonsList[index]._id;
+      }
+    });
+    return map;
+  }, [dbLessonsList]);
 
+  const runCode = async () => {
     setIsLoading(true);
     setOutput('');
 
     try {
-      // Capture stdout
-      pyodide.runPython(`
-        import sys
-        from io import StringIO
-        old_stdout = sys.stdout
-        sys.stdout = captured_output = StringIO()
-      `);
-
-      // Run user code
-      pyodide.runPython(code);
-
-      // Get the output
-      const stdout = pyodide.runPython(`
-        output = captured_output.getvalue()
-        sys.stdout = old_stdout
-        output
-      `);
-
-      setOutput(stdout || 'Code executed successfully (no output)');
-    } catch (error) {
+      const res = await apiFetch("/code/run", { method: "POST", body: JSON.stringify({ code }) }, token);
+      setOutput(res.output || 'Code executed successfully (no output)');
+    } catch (error: any) {
       setOutput(`Error: ${error.message}`);
     } finally {
       setIsLoading(false);
@@ -2501,35 +2523,13 @@ for name, func in operations.items():
   };
 
   const runPracticeCode = async () => {
-    if (!pyodide) {
-      setPracticeOutput('Pyodide is still loading. Please wait...');
-      return;
-    }
-
     setIsPracticeLoading(true);
     setPracticeOutput('');
 
     try {
-      // Capture stdout
-      pyodide.runPython(`
-        import sys
-        from io import StringIO
-        old_stdout = sys.stdout
-        sys.stdout = captured_output = StringIO()
-      `);
-
-      // Run user code
-      pyodide.runPython(practiceCode);
-
-      // Get the output
-      const stdout = pyodide.runPython(`
-        output = captured_output.getvalue()
-        sys.stdout = old_stdout
-        output
-      `);
-
-      setPracticeOutput(stdout || 'Code executed successfully (no output)');
-    } catch (error) {
+      const res = await apiFetch("/code/run", { method: "POST", body: JSON.stringify({ code: practiceCode }) }, token);
+      setPracticeOutput(res.output || 'Code executed successfully (no output)');
+    } catch (error: any) {
       setPracticeOutput(`Error: ${error.message}`);
     } finally {
       setIsPracticeLoading(false);
@@ -2542,6 +2542,35 @@ for name, func in operations.items():
   };
 
   const currentLesson = lessons.find(lesson => lesson.id === selectedLesson);
+  const activeQuiz = backendQuizQuestions.length ? backendQuizQuestions : (currentLesson?.quiz || []);
+  const completedLessons = studentDashboard?.completedLessons ?? 0;
+  const totalLessons = studentDashboard?.totalLessons ?? lessons.length;
+  const ecosystemProgress = Math.round((completedLessons / Math.max(totalLessons, 1)) * 100);
+  const xpEarned = completedLessons * 120 + (studentDashboard?.quizAttempts ?? 0) * 45 + (studentDashboard?.codeRunCount ?? 0) * 10;
+  const currentRank = rankLadder[Math.min(rankLadder.length - 1, Math.floor(xpEarned / 600))];
+
+  useEffect(() => {
+    const loadTopicQuiz = async () => {
+      try {
+        if (!currentLesson) return;
+        const lessonId = lessonIdByLocalId[selectedLesson];
+        if (!lessonId) {
+          setBackendQuizQuestions([]);
+          return;
+        }
+        const quiz = await apiFetch(`/student/quizzes/${lessonId}`, {}, token);
+        const normalized = (quiz?.questions || []).map((q: any) => ({
+          question: q.question,
+          options: q.options,
+          correct: q.correctAnswer
+        }));
+        setBackendQuizQuestions(normalized);
+      } catch {
+        setBackendQuizQuestions([]);
+      }
+    };
+    if (token) loadTopicQuiz();
+  }, [token, selectedLesson, lessonIdByLocalId, currentLesson]);
 
   const handleQuizAnswer = (questionIndex: number, answerIndex: number) => {
     const key = `${selectedLesson}-${questionIndex}`;
@@ -2551,42 +2580,73 @@ for name, func in operations.items():
     }));
   };
 
-  const submitQuiz = () => {
+  const submitQuiz = async () => {
     if (!currentLesson) return;
     
     const results: {[key: string]: boolean} = {};
-    currentLesson.quiz.forEach((question, index) => {
+    activeQuiz.forEach((question, index) => {
       const key = `${selectedLesson}-${index}`;
       const userAnswer = quizAnswers[key];
       results[key] = userAnswer === question.correct;
     });
     
     setQuizResults(results);
+
+    const lessonId = lessonIdByLocalId[selectedLesson];
+    if (!lessonId) return;
+    const answers = activeQuiz.map((_, index) => {
+      const key = `${selectedLesson}-${index}`;
+      return quizAnswers[key];
+    });
+    try {
+      await apiFetch(`/student/quizzes/${lessonId}/submit`, { method: "POST", body: JSON.stringify({ answers }) }, token);
+    } catch {
+      // Keep local score UX even if tracking call fails.
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-indigo-100 dark:from-slate-950 dark:via-slate-950 dark:to-cyan-950">
       <div className="flex h-screen">
         {/* Left Sidebar - Course Menu */}
-        <div className="w-80 bg-white shadow-lg border-r border-gray-200 overflow-y-auto">
-          <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-600">
+        <div className="w-80 bg-white/90 shadow-2xl border-r border-cyan-100 overflow-y-auto backdrop-blur dark:bg-slate-950/90 dark:border-slate-800">
+          <div className="p-6 border-b border-cyan-100 bg-gradient-to-r from-slate-950 via-cyan-800 to-indigo-700">
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-              <Book className="h-8 w-8" />
-              Python Learning Hub
+              <Sparkles className="h-8 w-8" />
+              Robokidy Python
             </h1>
-            <p className="text-blue-100 text-sm mt-2">Interactive Python Tutorials</p>
+            <p className="text-cyan-100 text-sm mt-2">Python programming lessons and practice</p>
+            <div className="mt-4 rounded-lg border border-white/15 bg-white/10 p-3 text-white">
+              <div className="flex items-center justify-between text-xs">
+                <span>{currentRank}</span>
+                <span>{xpEarned} XP</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/15">
+                <div className="h-full rounded-full bg-cyan-300 transition-all" style={{ width: `${Math.min(ecosystemProgress, 100)}%` }} />
+              </div>
+              <Button
+                variant="secondary"
+                className="mt-3 w-full justify-center gap-2 bg-white text-slate-900 hover:bg-cyan-50"
+                onClick={() => window.location.href = "/student/materials"}
+              >
+                <FileText className="h-4 w-4" />
+                Materials
+              </Button>
+            </div>
           </div>
           
           <div className="p-4">
             <h2 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
               <Trophy className="h-5 w-5 text-yellow-500" />
-              Course Curriculum
+              Python Curriculum
             </h2>
             <div className="space-y-3">
               {lessons.map((lesson, index) => (
                 <button
                   key={lesson.id}
-                  onClick={() => setSelectedLesson(lesson.id)}
+                  onClick={() => {
+                    setSelectedLesson(lesson.id);
+                  }}
                   className={`w-full text-left p-4 rounded-lg transition-all duration-200 hover:bg-blue-50 border-2 ${
                     selectedLesson === lesson.id 
                       ? 'bg-blue-100 border-blue-400 text-blue-900 shadow-md' 
@@ -2620,22 +2680,91 @@ for name, func in operations.items():
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="bg-white shadow-sm border-b border-gray-200 p-6">
+          <div className="bg-white/85 shadow-sm border-b border-cyan-100 p-6 backdrop-blur dark:bg-slate-950/80 dark:border-slate-800">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold text-gray-800">{currentLesson?.title}</h1>
-                <p className="text-gray-600 mt-1 text-lg">{currentLesson?.description}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Robokidy Innovative Centre</p>
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100">{currentLesson?.title}</h1>
+                <p className="text-gray-600 mt-1 text-lg dark:text-slate-300">{currentLesson?.description}</p>
               </div>
-              <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-sm px-3 py-1">
-                Interactive Learning
-              </Badge>
+              <div className="flex items-center gap-3">
+                <Badge variant="secondary" className="bg-cyan-100 text-cyan-800 text-sm px-3 py-1">
+                  {currentRank}
+                </Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                >
+                  {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                  {theme === "dark" ? "Light" : "Black"}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="rounded-full ring-offset-background focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <Avatar className="h-10 w-10 border-2 border-blue-200">
+                        <AvatarFallback className="bg-blue-600 text-white font-semibold">
+                          {user?.username?.slice(0, 2).toUpperCase() || "ST"}
+                        </AvatarFallback>
+                      </Avatar>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <DropdownMenuLabel>
+                      <p className="font-semibold">{user?.username}</p>
+                      <p className="text-xs text-muted-foreground">Keep learning, your progress is growing.</p>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <div className="px-2 py-1 space-y-2 text-sm">
+                      <div className="flex items-center justify-between"><span>Total lessons</span><span className="font-semibold">{studentDashboard?.totalLessons ?? "-"}</span></div>
+                      <div className="flex items-center justify-between"><span>Completed lessons</span><span className="font-semibold">{studentDashboard?.completedLessons ?? "-"}</span></div>
+                      <div className="flex items-center justify-between"><span>Quiz attempts</span><span className="font-semibold">{studentDashboard?.quizAttempts ?? "-"}</span></div>
+                      <div className="flex items-center justify-between"><span>Code runs</span><span className="font-semibold">{studentDashboard?.codeRunCount ?? "-"}</span></div>
+                      <div className="flex items-center justify-between"><span>Pending topics</span><span className="font-semibold text-amber-600">{pendingTopics}</span></div>
+                      <div className="flex items-center justify-between"><span>Pending questions</span><span className="font-semibold text-amber-600">{pendingTopics * 5}</span></div>
+                    </div>
+                    <DropdownMenuSeparator />
+                    <div className="p-2">
+                      <Dialog open={progressOpen} onOpenChange={setProgressOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" className="w-full mb-2">View Full Progress</Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-3xl">
+                          <DialogHeader>
+                            <DialogTitle>My Full Learning Progress</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-3 max-h-[65vh] overflow-auto pr-1">
+                            {topicRows.map((row) => (
+                              <div key={row.title} className="border rounded-lg p-3 bg-white">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="font-semibold text-sm">{row.title}</p>
+                                  <Badge className={row.completed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}>
+                                    {row.completed ? "Completed" : "Pending"}
+                                  </Badge>
+                                </div>
+                                <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-gray-700">
+                                  <p>Attempts: <span className="font-semibold">{row.attempts}</span></p>
+                                  <p>Best: <span className="font-semibold">{row.bestScore ?? "-"}</span></p>
+                                  <p>Last: <span className="font-semibold">{row.lastScore ?? "-"}</span></p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                      <Button variant="destructive" className="w-full" onClick={logout}>Logout</Button>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </div>
 
           {/* Content Area */}
           <div className="flex-1 overflow-hidden">
             <Tabs defaultValue="lesson" className="h-full flex flex-col">
-              <TabsList className="mx-6 mt-4 grid w-fit grid-cols-4 bg-gray-100">
+              <TabsList className="mx-6 mt-4 grid w-fit grid-cols-4 bg-gray-100 dark:bg-slate-900">
                 <TabsTrigger value="lesson" className="flex items-center gap-2 px-4 py-2">
                   <Book className="h-4 w-4" />
                   Lesson
@@ -2793,7 +2922,7 @@ for name, func in operations.items():
                     <CardDescription className="text-gray-700 text-base">Test your understanding of {currentLesson?.title}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-6 space-y-6">
-                    {currentLesson?.quiz.map((question, questionIndex) => (
+                    {activeQuiz.map((question, questionIndex) => (
                       <div key={questionIndex} className="space-y-4 p-4 bg-gray-50 rounded-lg">
                         <h3 className="font-semibold text-gray-800 text-lg">
                           {questionIndex + 1}. {question.question}
@@ -2843,7 +2972,7 @@ for name, func in operations.items():
                       <Button 
                         onClick={submitQuiz}
                         className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3"
-                        disabled={Object.keys(quizAnswers).filter(key => key.startsWith(selectedLesson)).length < (currentLesson?.quiz.length || 0)}
+                        disabled={Object.keys(quizAnswers).filter(key => key.startsWith(selectedLesson)).length < (activeQuiz.length || 0)}
                       >
                         Submit Quiz
                       </Button>
@@ -2853,11 +2982,11 @@ for name, func in operations.items():
                           <p className="text-lg font-semibold text-blue-800">
                             Score: {Object.entries(quizResults)
                               .filter(([key]) => key.startsWith(selectedLesson))
-                              .filter(([, correct]) => correct).length} / {currentLesson?.quiz.length}
+                              .filter(([, correct]) => correct).length} / {activeQuiz.length}
                           </p>
                           {Object.entries(quizResults)
                             .filter(([key]) => key.startsWith(selectedLesson))
-                            .filter(([, correct]) => correct).length === currentLesson?.quiz.length && (
+                            .filter(([, correct]) => correct).length === activeQuiz.length && (
                             <p className="text-green-600 font-medium mt-2">Perfect Score! Well done! 🎉</p>
                           )}
                         </div>
