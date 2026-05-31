@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { apiFetch } from "@/api/client";
 
 type UserRole = "admin" | "teacher" | "student" | "parent";
 
@@ -28,25 +29,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState(localStorage.getItem("token") || "");
   const [user, setUser] = useState<User>(JSON.parse(localStorage.getItem("user") || "null"));
 
+  const clearAuth = () => {
+    setToken("");
+    setUser(null);
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+  };
+
+  useEffect(() => {
+    if (!token) return;
+
+    apiFetch("/auth/me", {}, token)
+      .then((data) => {
+        if (data?.user) {
+          setUser(data.user);
+          localStorage.setItem("user", JSON.stringify(data.user));
+        }
+      })
+      .catch(clearAuth);
+  }, [token]);
+
   useEffect(() => {
     if (!token) return;
 
     const timeoutMs = 30 * 60 * 1000;
-    let timer = window.setTimeout(() => {
-      setToken("");
-      setUser(null);
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-    }, timeoutMs);
+    let timer = window.setTimeout(clearAuth, timeoutMs);
 
     const refresh = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        setToken("");
-        setUser(null);
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-      }, timeoutMs);
+      timer = window.setTimeout(clearAuth, timeoutMs);
     };
 
     window.addEventListener("mousemove", refresh);
@@ -73,10 +84,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("user", JSON.stringify(nextUser));
     },
     logout: () => {
-      setToken("");
-      setUser(null);
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
+      apiFetch("/auth/logout", { method: "POST" }, token).catch(() => undefined);
+      clearAuth();
     }
   }), [token, user]);
 

@@ -9,6 +9,19 @@ const { ensureUsernameAvailable, generateUniqueUsername } = require("../utils/ac
 
 const router = express.Router();
 
+const toAuthUser = (user) => ({
+  id: user._id,
+  role: user.role,
+  username: user.username,
+  fullName: user.fullName,
+  email: user.email,
+  schoolId: user.schoolId,
+  classSectionIds: user.classSectionIds || [],
+  permissions: user.permissions || [],
+  grade: user.grade,
+  firstLogin: user.firstLogin
+});
+
 router.get("/username", async (req, res) => {
   const requested = String(req.query.username || "").trim().toLowerCase();
   if (requested) return res.json(await ensureUsernameAvailable(requested));
@@ -41,18 +54,19 @@ router.post("/login", async (req, res) => {
   await ActivityLog.create({ userId: user._id, action: "login" });
   res.json({
     token,
-    user: {
-      id: user._id,
-      role: user.role,
-      username: user.username,
-      fullName: user.fullName,
-      email: user.email,
-      schoolId: user.schoolId,
-      classSectionIds: user.classSectionIds || [],
-      permissions: user.permissions || [],
-      firstLogin: user.firstLogin
-    }
+    user: toAuthUser(user)
   });
+});
+
+router.get("/me", auth, async (req, res) => {
+  const user = await User.findById(req.user.id).select("-password");
+  if (!user || !user.active) return res.status(401).json({ message: "Session expired" });
+  res.json({ user: toAuthUser(user) });
+});
+
+router.post("/logout", auth, async (req, res) => {
+  await ActivityLog.create({ userId: req.user.id, action: "logout" }).catch(() => undefined);
+  res.json({ ok: true });
 });
 
 router.post("/change-password", auth, async (req, res) => {

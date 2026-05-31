@@ -3,7 +3,20 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
+const path = require("path");
 const connectDB = require("./config/db");
+
+const requiredEnv = ["MONGODB_URI", "JWT_SECRET"];
+const recommendedEnv = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "NODE_ENV", "JUDGE0_API_KEY"];
+for (const name of requiredEnv) {
+  if (!process.env[name]) {
+    console.error(`Missing required environment variable: ${name}`);
+    process.exit(1);
+  }
+}
+for (const name of recommendedEnv) {
+  if (!process.env[name]) console.warn(`Missing recommended environment variable: ${name}`);
+}
 
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled promise rejection:", reason?.message || reason);
@@ -42,10 +55,39 @@ const adminAnalyticsRoutes = optionalRoute("./routes/adminAnalyticsRoutes");
 const codingSubmissionRoutes = optionalRoute("./routes/codingSubmissionRoutes");
 
 const app = express();
-app.use(cors());
+const configuredOrigins = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowedOrigins = new Set([
+  ...configuredOrigins,
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:8080",
+  "http://127.0.0.1:8080"
+]);
+
+app.use(cors({
+  origin(origin, callback) {
+    let hostname = "";
+    try {
+      hostname = origin ? new URL(origin).hostname : "";
+    } catch {
+      return callback(new Error("CORS origin not allowed"));
+    }
+    if (!origin || allowedOrigins.has(origin) || /\.vercel\.app$/.test(hostname)) {
+      return callback(null, true);
+    }
+    return callback(new Error("CORS origin not allowed"));
+  },
+  credentials: true
+}));
 app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json({ limit: "2mb" }));
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRoutes);
@@ -62,6 +104,17 @@ if (teacherReportsRoutes) app.use("/api/tests", teacherReportsRoutes);
 if (adminAnalyticsRoutes) app.use("/api/tests", adminAnalyticsRoutes);
 if (codingSubmissionRoutes) app.use("/api/tests", codingSubmissionRoutes);
 if (reportRoutes) app.use("/api/reports", reportRoutes);
+
+app.use("/api", (req, res) => {
+  res.status(404).json({ message: "API route not found", path: req.originalUrl });
+});
+
+app.use((error, _req, res, _next) => {
+  console.error(error.stack || error.message);
+  res.status(error.message === "CORS origin not allowed" ? 403 : 500).json({
+    message: error.message === "CORS origin not allowed" ? "CORS origin not allowed" : "Server unavailable"
+  });
+});
 
 const PORT = process.env.PORT || 5000;
 connectDB()

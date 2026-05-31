@@ -56,9 +56,12 @@ const App = () => (
         <Route path="/student/materials" element={<ProtectedRoute role="student"><MaterialsPage /></ProtectedRoute>} />
         <Route path="/student/materials/:id" element={<ProtectedRoute role="student"><MaterialViewerPage /></ProtectedRoute>} />
         <Route path="/student/quizzes" element={<ProtectedRoute role="student"><QuizPage /></ProtectedRoute>} />
+        <Route path="/student/quiz" element={<ProtectedRoute role="student"><QuizPage /></ProtectedRoute>} />
+        <Route path="/student/progress" element={<ProtectedRoute role="student"><StudentAutoRedirect /></ProtectedRoute>} />
         <Route path="/student/tests" element={<ProtectedRoute role="student"><AssessmentCenterPage /></ProtectedRoute>} />
         <Route path="/student/tests/:id" element={<ProtectedRoute role="student"><AssessmentAttemptPage /></ProtectedRoute>} />
         <Route path="/student/code" element={<ProtectedRoute role="student"><CodeLabPage /></ProtectedRoute>} />
+        <Route path="/student/codelab" element={<ProtectedRoute role="student"><CodeLabPage /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute role="admin"><CeoDashboard /></ProtectedRoute>} />
         <Route path="/admin/schools" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/admin/teachers" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
@@ -70,7 +73,9 @@ const App = () => (
         <Route path="/admin/students" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/admin/courses" element={<ProtectedRoute role="admin"><AdminCoursesPage /></ProtectedRoute>} />
         <Route path="/admin/materials" element={<ProtectedRoute role="admin"><AdminMaterialsPage /></ProtectedRoute>} />
+        <Route path="/admin/curriculum" element={<ProtectedRoute role="admin"><AdminContentPage /></ProtectedRoute>} />
         <Route path="/admin/assessments" element={<ProtectedRoute role="admin"><AssessmentCenterPage /></ProtectedRoute>} />
+        <Route path="/admin/reports" element={<ProtectedRoute role="admin"><AdminProgressPage /></ProtectedRoute>} />
         <Route path="/admin/progress" element={<ProtectedRoute role="admin"><AdminProgressPage /></ProtectedRoute>} />
         <Route path="/admin/analytics" element={<ProtectedRoute role="admin"><AdminAnalyticsPage /></ProtectedRoute>} />
         <Route path="/admin/ai-tutor" element={<ProtectedRoute role="admin"><AdminAiTutorPage /></ProtectedRoute>} />
@@ -87,7 +92,9 @@ const App = () => (
           <Route path="materials" element={<TeacherMaterialsPage />} />
           <Route path="curriculum" element={<TeacherCurriculumPage />} />
           <Route path="coding" element={<CodingPage />} />
+          <Route path="codelab" element={<CodingPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="reports" element={<AnalyticsPage />} />
           <Route path="messages" element={<MessagesPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />

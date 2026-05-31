@@ -11,7 +11,7 @@ const { auth } = require("../middleware/auth");
 // ==================== TEACHER REPORTS ====================
 
 // Get student-wise report for a test
-router.get("/reports/tests/:testId/student-wise", auth, async (req, res) => {
+router.get("/tests/:testId/student-wise", auth, async (req, res) => {
   try {
     const { role, userId } = req.user;
 
@@ -84,7 +84,7 @@ router.get("/reports/tests/:testId/student-wise", auth, async (req, res) => {
 });
 
 // Get question-wise analysis
-router.get("/reports/tests/:testId/question-wise", auth, async (req, res) => {
+router.get("/tests/:testId/question-wise", auth, async (req, res) => {
   try {
     const { role } = req.user;
 
@@ -134,7 +134,7 @@ router.get("/reports/tests/:testId/question-wise", auth, async (req, res) => {
 });
 
 // Get class-wise performance
-router.get("/reports/tests/:testId/class-wise", auth, async (req, res) => {
+router.get("/tests/:testId/class-wise", auth, async (req, res) => {
   try {
     const { role } = req.user;
 
@@ -197,7 +197,7 @@ router.get("/reports/tests/:testId/class-wise", auth, async (req, res) => {
 });
 
 // Get weak topics analysis
-router.get("/reports/tests/:testId/weak-topics", auth, async (req, res) => {
+router.get("/tests/:testId/weak-topics", auth, async (req, res) => {
   try {
     const { role } = req.user;
 
@@ -258,7 +258,7 @@ router.get("/reports/tests/:testId/weak-topics", auth, async (req, res) => {
 
 // Get performance distribution
 router.get(
-  "/reports/tests/:testId/performance-distribution",
+  "/tests/:testId/performance-distribution",
   auth,
   async (req, res) => {
     try {
@@ -325,7 +325,7 @@ router.get(
 );
 
 // Get time analysis
-router.get("/reports/tests/:testId/time-analysis", auth, async (req, res) => {
+router.get("/tests/:testId/time-analysis", auth, async (req, res) => {
   try {
     const { role } = req.user;
 
@@ -367,7 +367,7 @@ router.get("/reports/tests/:testId/time-analysis", auth, async (req, res) => {
 });
 
 // Get cheating violations report
-router.get("/reports/tests/:testId/violations", auth, async (req, res) => {
+router.get("/tests/:testId/violations", auth, async (req, res) => {
   try {
     const { role } = req.user;
 
