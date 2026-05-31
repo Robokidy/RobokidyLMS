@@ -13,7 +13,7 @@ export type Grade =
   | "grade8"
   | "grade9"
   | "grade10";
-export type MaterialType = "pdf" | "book" | "notes" | "video";
+export type MaterialType = "pdf" | "book" | "notes" | "video" | "worksheet" | "presentation" | "zip" | "image" | "code" | "other";
 export type Material = {
   _id: string;
   title: string;

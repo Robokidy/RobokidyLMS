@@ -73,7 +73,7 @@ const App = () => (
         <Route path="/admin/students" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/admin/courses" element={<ProtectedRoute role="admin"><AdminCoursesPage /></ProtectedRoute>} />
         <Route path="/admin/materials" element={<ProtectedRoute role="admin"><AdminMaterialsPage /></ProtectedRoute>} />
-        <Route path="/admin/curriculum" element={<ProtectedRoute role="admin"><AdminContentPage /></ProtectedRoute>} />
+        <Route path="/admin/curriculum" element={<ProtectedRoute role="admin"><AdminCoursesPage /></ProtectedRoute>} />
         <Route path="/admin/assessments" element={<ProtectedRoute role="admin"><AssessmentCenterPage /></ProtectedRoute>} />
         <Route path="/admin/reports" element={<ProtectedRoute role="admin"><AdminProgressPage /></ProtectedRoute>} />
         <Route path="/admin/progress" element={<ProtectedRoute role="admin"><AdminProgressPage /></ProtectedRoute>} />

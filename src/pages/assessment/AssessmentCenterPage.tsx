@@ -106,6 +106,21 @@ export default function AssessmentCenterPage() {
   const createQuestion = async () => {
     setError("");
     const optionFields = [questionForm.optionA, questionForm.optionB, questionForm.optionC, questionForm.optionD];
+    if (!questionForm.questionText.trim()) {
+      setError("Question is required.");
+      return;
+    }
+    if (questionForm.type === "mcq") {
+      const missingOption = optionFields.some((option) => !option.trim());
+      if (missingOption) {
+        setError("MCQ questions require Option A, Option B, Option C, and Option D.");
+        return;
+      }
+      if (!questionForm.correctOption) {
+        setError("MCQ questions require a correct answer.");
+        return;
+      }
+    }
     const objectiveOptions = optionFields
       .map((text, index) => ({ optionId: String.fromCharCode(65 + index), text: text.trim(), isCorrect: questionForm.correctOption === String.fromCharCode(65 + index) }))
       .filter((option) => option.text);
@@ -204,7 +219,7 @@ export default function AssessmentCenterPage() {
                     <select className="h-10 rounded-md border bg-background px-3 text-sm" value={questionForm.type} onChange={(event) => setQuestionForm({ ...questionForm, type: event.target.value })}>{questionTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select>
                     <select className="h-10 rounded-md border bg-background px-3 text-sm" value={questionForm.difficulty} onChange={(event) => setQuestionForm({ ...questionForm, difficulty: event.target.value })}>{["easy", "medium", "hard"].map((item) => <option key={item} value={item}>{item}</option>)}</select>
                     <Input value={questionForm.marks} onChange={(event) => setQuestionForm({ ...questionForm, marks: event.target.value })} placeholder="Marks" />
-                    <Button disabled={!questionForm.questionText.trim()} onClick={createQuestion}><Plus className="mr-2 h-4 w-4" />Add</Button>
+                    <Button disabled={!questionForm.questionText.trim() || (questionForm.type === "mcq" && (!questionForm.optionA.trim() || !questionForm.optionB.trim() || !questionForm.optionC.trim() || !questionForm.optionD.trim() || !questionForm.correctOption))} onClick={createQuestion}><Plus className="mr-2 h-4 w-4" />Add</Button>
                   </div>
                   {["mcq", "multi-select", "true-false"].includes(questionForm.type) && (
                     <div className="grid gap-3 md:grid-cols-5">

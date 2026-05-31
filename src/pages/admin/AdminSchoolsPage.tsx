@@ -1,11 +1,11 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
-import { Bell, Building2, CalendarCheck, CreditCard, Edit3, GraduationCap, Plus, RefreshCw, Search, ShieldCheck, Trash2, Users } from "lucide-react";
+import { Archive, Bell, Building2, CalendarCheck, CheckCircle2, CreditCard, Download, Edit3, Eye, GraduationCap, Mail, MessageSquare, Phone, Plus, Search, Settings, ShieldCheck, UserRound, Users } from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiFetch } from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
 import AdminShell from "@/components/layout/AdminShell";
-import GlobalFilters, { filtersToQuery, readStoredFilters, type GlobalFilterState } from "@/components/admin/GlobalFilters";
 import UsernameField from "@/components/admin/UsernameField";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,53 +13,70 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
-const PAGE_SIZE = 8;
-const emptySchool = { name: "", code: "", address: "", city: "", state: "", country: "India", pincode: "", contactPhone: "", alternatePhone: "", principalName: "", contactEmail: "", logoUrl: "", schoolType: "private", plan: "trial", active: true };
-const emptyTeacher = { fullName: "", username: "", email: "", phone: "", employeeId: "", schoolId: "", classSectionIds: [] as string[], subjects: "", qualification: "", experience: "", profilePhotoUrl: "", joiningDate: "", salary: "", permissions: ["students:view", "students:manage", "classes:manage", "attendance", "materials", "assignments", "coding", "analytics", "messages", "fees:view"], active: true };
-const emptyClass = { schoolId: "", name: "", grade: "", section: "A", classTeacherId: "", teacherIds: [] as string[], courseIds: [] as string[], subjects: "", schedule: "", codingTracks: "python,scratch,robotics", capacity: 30, students: [] as any[], active: true };
-
-const teacherPermissionOptions = [
-  { value: "students:view", label: "View students" },
-  { value: "students:manage", label: "Manage students" },
-  { value: "classes:manage", label: "Create/manage classes" },
-  { value: "attendance", label: "Mark attendance" },
-  { value: "materials", label: "Upload materials" },
-  { value: "assignments", label: "Create assignments" },
-  { value: "coding", label: "Access coding module" },
-  { value: "analytics", label: "View analytics" },
-  { value: "fees:view", label: "View fee status" },
-  { value: "messages", label: "Send messages/announcements" }
-];
+const emptySchool = { name: "", code: "", address: "", city: "", state: "", country: "India", pincode: "", contactPhone: "", alternatePhone: "", principalName: "", contactEmail: "", schoolType: "private", plan: "trial", active: true };
+const emptyTeacher = { fullName: "", username: "", email: "", phone: "", employeeId: "", schoolId: "", classSectionIds: [] as string[], subjects: "", qualification: "", experience: "", profilePhotoUrl: "", permissions: ["students:view", "students:manage", "classes:manage", "attendance", "materials", "assignments", "coding", "analytics", "messages", "fees:view"], active: true };
 const emptyStudent = { fullName: "", username: "", studentId: "", rollNumber: "", parentName: "", parentContact: "", email: "", phone: "", schoolId: "", classSectionIds: [] as string[], grade: "", assignedCourses: [] as string[], feeStructure: "", profilePhotoUrl: "", active: true };
+const emptyClass = { schoolId: "", name: "", grade: "", section: "A", classTeacherId: "", teacherIds: [] as string[], courseIds: [] as string[], subjects: "", schedule: "", codingTracks: "python,scratch,robotics", capacity: 30, students: [] as any[], active: true };
 const emptyFee = { schoolId: "", classSectionId: "", studentId: "", totalFees: "", paidAmount: "0", dueDate: "", notes: "" };
 const emptyNotification = { schoolId: "", classSectionId: "", audience: "all", title: "", body: "", active: true };
 
-function splitList(value: string) {
+function splitList(value = "") {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
+function relationName(value: any) {
+  if (!value) return "-";
+  if (Array.isArray(value)) return value.map(relationName).filter(Boolean).join(", ") || "-";
+  return value.name || value.fullName || value.username || value.title || String(value);
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">{label}</Label>{children}</div>;
+  return <div className="space-y-1.5"><Label className="text-xs text-slate-500">{label}</Label>{children}</div>;
 }
 
 function NativeSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={`h-10 w-full rounded-md border border-input bg-background px-3 text-sm ${props.className || ""}`} />;
 }
 
+function EmptyState({ title, action }: { title: string; action?: ReactNode }) {
+  return <div className="rounded-lg border border-dashed bg-white py-12 text-center dark:bg-slate-900"><p className="text-sm text-slate-500">{title}</p>{action && <div className="mt-4">{action}</div>}</div>;
+}
+
+function SkeletonGrid() {
+  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-44 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />)}</div>;
+}
+
+function Metric({ label, value, icon: Icon }: any) {
+  return <div className="rounded-lg border bg-white p-4 shadow-sm dark:bg-slate-900"><div className="flex items-center justify-between"><p className="text-sm text-slate-500">{label}</p><Icon className="h-4 w-4 text-slate-500" /></div><p className="mt-2 text-2xl font-bold">{value}</p></div>;
+}
+
+function AvatarTile({ src, label }: { src?: string; label: string }) {
+  const initials = label.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "RK";
+  return src ? <img src={src} alt="" className="h-12 w-12 rounded-full object-cover" /> : <span className="grid h-12 w-12 place-items-center rounded-full bg-slate-950 text-sm font-bold text-white">{initials}</span>;
+}
+
+function exportCsv(filename: string, headers: string[], rows: any[][]) {
+  const csv = [headers.join(","), ...rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(","))].join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function AdminSchoolsPage() {
   const { token } = useAuth();
   const location = useLocation();
-  const routeTab = location.pathname.split("/").pop() || "schools";
-  const routeActiveTab = ["teachers", "classes", "students", "fees", "attendance", "notifications", "settings"].includes(routeTab) ? routeTab : "schools";
-  const [activeTab, setActiveTab] = useState(routeActiveTab);
+  const page = location.pathname.split("/").pop() || "schools";
+  const pageKey = ["teachers", "classes", "students", "fees", "attendance", "notifications", "settings"].includes(page) ? page : "schools";
 
-  const [stats, setStats] = useState<any>({});
-  const [filters, setFilters] = useState<GlobalFilterState>(() => readStoredFilters("learnpy-admin-filters"));
-  const [filterOptions, setFilterOptions] = useState<any>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [schools, setSchools] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -69,137 +86,79 @@ export default function AdminSchoolsPage() {
   const [attendance, setAttendance] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [schoolFilter, setSchoolFilter] = useState("");
+  const [classFilter, setClassFilter] = useState("");
   const [dialog, setDialog] = useState("");
   const [editing, setEditing] = useState<any>(null);
+  const [viewing, setViewing] = useState<any>(null);
+  const [credential, setCredential] = useState("");
   const [schoolForm, setSchoolForm] = useState<any>(emptySchool);
   const [teacherForm, setTeacherForm] = useState<any>(emptyTeacher);
-  const [classForm, setClassForm] = useState<any>(emptyClass);
   const [studentForm, setStudentForm] = useState<any>(emptyStudent);
+  const [classForm, setClassForm] = useState<any>(emptyClass);
   const [feeForm, setFeeForm] = useState<any>(emptyFee);
   const [notificationForm, setNotificationForm] = useState<any>(emptyNotification);
   const [attendanceForm, setAttendanceForm] = useState<any>({ classSectionId: "", date: new Date().toISOString().slice(0, 10), records: {} });
-  const [credential, setCredential] = useState("");
-
-  useEffect(() => {
-    localStorage.setItem("learnpy-draft-school", JSON.stringify(schoolForm));
-    localStorage.setItem("learnpy-draft-teacher", JSON.stringify(teacherForm));
-    localStorage.setItem("learnpy-draft-class", JSON.stringify(classForm));
-    localStorage.setItem("learnpy-draft-student", JSON.stringify(studentForm));
-  }, [schoolForm, teacherForm, classForm, studentForm]);
 
   const load = async () => {
-    const query = filtersToQuery(filters);
-    const [dashboard, schoolsData, teachersData, classesData, studentsData, coursesData, feesData, attendanceData, notificationData] = await Promise.all([
-      apiFetch(`/admin/dashboard${query}`, {}, token),
-      apiFetch(`/admin/schools${query}`, {}, token),
-      apiFetch(`/admin/teachers${query}`, {}, token),
-      apiFetch(`/admin/classes${query}`, {}, token),
-      apiFetch(`/admin/students${query}`, {}, token),
-      apiFetch(`/admin/courses${filters.courseId ? `?courseId=${filters.courseId}` : ""}`, {}, token),
-      apiFetch(`/admin/fees${query}`, {}, token),
-      apiFetch(`/admin/attendance${query}`, {}, token),
-      apiFetch("/admin/notifications", {}, token)
-    ]);
-    setStats(dashboard);
-    setSchools(schoolsData);
-    setTeachers(teachersData);
-    setClasses(classesData);
-    setStudents(studentsData);
-    setCourses(coursesData);
-    setFees(feesData);
-    setAttendance(attendanceData);
-    setNotifications(notificationData);
-  };
-
-  useEffect(() => {
-    load().catch((error) => toast.error(error.message));
-    const timer = window.setInterval(() => load().catch(() => undefined), 15000);
-    return () => window.clearInterval(timer);
-  }, [token, filters]);
-
-  useEffect(() => {
-    apiFetch("/admin/filter-options", {}, token).then(setFilterOptions).catch(() => undefined);
-  }, [token]);
-
-  useEffect(() => {
-    setActiveTab(routeActiveTab);
-  }, [routeActiveTab]);
-
-  const summary = [
-    { label: "Schools", value: stats.totalSchools ?? schools.length, icon: Building2 },
-    { label: "Teachers", value: stats.totalTeachers ?? teachers.length, icon: ShieldCheck },
-    { label: "Classes", value: classes.filter((row) => row.active !== false).length, icon: GraduationCap },
-    { label: "Students", value: stats.totalStudents ?? students.length, icon: Users },
-    { label: "Pending Fees", value: `Rs. ${Number(stats.pendingFees || 0).toLocaleString()}`, icon: CreditCard },
-    { label: "Attendance", value: `${stats.attendancePercentage || 0}%`, icon: CalendarCheck }
-  ];
-
-  const filteredSchools = useMemo(() => {
-    const q = search.toLowerCase();
-    return schools.filter((school) => [school.name, school.code, school.city, school.principalName].some((value) => String(value || "").toLowerCase().includes(q)));
-  }, [schools, search]);
-  const totalPages = Math.max(1, Math.ceil(filteredSchools.length / PAGE_SIZE));
-  const pagedSchools = filteredSchools.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const selectedClassStudents = students.filter((student) => (student.classSectionIds || []).some((klass: any) => String(klass._id || klass) === attendanceForm.classSectionId));
-
-  const submit = async (kind: string) => {
+    setLoading(true);
     try {
-      if (kind === "school") {
-        await apiFetch(editing ? `/admin/schools/${editing._id}` : "/admin/schools", { method: editing ? "PUT" : "POST", body: JSON.stringify(schoolForm) }, token);
-      }
-      if (kind === "teacher") {
-        const payload = { ...teacherForm, subjects: splitList(teacherForm.subjects), permissions: teacherForm.permissions };
-        const res = await apiFetch(editing ? `/admin/teachers/${editing._id}` : "/admin/teachers", { method: editing ? "PUT" : "POST", body: JSON.stringify(payload) }, token);
-        if (res.tempPassword) setCredential(`${res.username} temporary password: ${res.tempPassword}`);
-      }
-      if (kind === "class") {
-        const payload = { ...classForm, subjects: splitList(classForm.subjects), codingTracks: splitList(classForm.codingTracks) };
-        const res = await apiFetch(editing ? `/admin/classes/${editing._id}` : "/admin/classes", { method: editing ? "PUT" : "POST", body: JSON.stringify(payload) }, token);
-        if (res.students?.length) setCredential(`${res.students.length} student usernames created with password Robokidy@123`);
-      }
-      if (kind === "student") {
-        const res = await apiFetch(editing ? `/admin/students/${editing._id}` : "/admin/students", { method: editing ? "PUT" : "POST", body: JSON.stringify(studentForm) }, token);
-        if (res.tempPassword) setCredential(`${res.username} temporary password: ${res.tempPassword}`);
-      }
-      if (kind === "fee") {
-        await apiFetch(editing ? `/admin/fees/${editing._id}` : "/admin/fees", { method: editing ? "PUT" : "POST", body: JSON.stringify(feeForm) }, token);
-      }
-      if (kind === "notification") {
-        await apiFetch(editing ? `/admin/notifications/${editing._id}` : "/admin/notifications", { method: editing ? "PUT" : "POST", body: JSON.stringify(notificationForm) }, token);
-      }
-      toast.success(`${kind} saved`);
-      setDialog("");
-      setEditing(null);
-      load();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to save");
+      const [schoolsData, teachersData, classesData, studentsData, coursesData, feesData, attendanceData, notificationData] = await Promise.all([
+        apiFetch("/admin/schools", {}, token),
+        apiFetch("/admin/teachers", {}, token),
+        apiFetch("/admin/classes", {}, token),
+        apiFetch("/admin/students", {}, token),
+        apiFetch("/admin/courses", {}, token),
+        apiFetch("/admin/fees", {}, token),
+        apiFetch("/admin/attendance", {}, token),
+        apiFetch("/admin/notifications", {}, token)
+      ]);
+      setSchools(schoolsData || []);
+      setTeachers(teachersData || []);
+      setClasses(classesData || []);
+      setStudents(studentsData || []);
+      setCourses(coursesData || []);
+      setFees(feesData || []);
+      setAttendance(attendanceData || []);
+      setNotifications(notificationData || []);
+      setError("");
+    } catch (err: any) {
+      setError(err.message || "Unable to load admin data");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const deactivate = async (path: string) => {
-    if (!confirm("Deactivate this record?")) return;
-    await apiFetch(path, { method: "DELETE" }, token);
-    toast.success("Record updated");
-    load();
-  };
+  useEffect(() => { load(); }, [token]);
+  useEffect(() => { setSearch(""); setSchoolFilter(""); setClassFilter(""); setViewing(null); }, [pageKey]);
 
-  const markAttendance = async () => {
-    const records = Object.entries(attendanceForm.records).map(([studentId, status]) => ({ studentId, status }));
-    await apiFetch("/admin/attendance", { method: "POST", body: JSON.stringify({ classSectionId: attendanceForm.classSectionId, date: attendanceForm.date, records }) }, token);
-    toast.success("Attendance saved");
-    load();
+  const filteredSchools = useMemo(() => schools.filter((school) => `${school.name} ${school.code} ${school.principalName} ${school.city}`.toLowerCase().includes(search.toLowerCase())), [schools, search]);
+  const filteredTeachers = useMemo(() => teachers.filter((teacher) => `${teacher.fullName} ${teacher.username} ${teacher.email}`.toLowerCase().includes(search.toLowerCase()) && (!schoolFilter || String(teacher.schoolId?._id || teacher.schoolId) === schoolFilter)), [teachers, search, schoolFilter]);
+  const filteredStudents = useMemo(() => students.filter((student) => `${student.fullName} ${student.username} ${student.rollNumber} ${student.parentName}`.toLowerCase().includes(search.toLowerCase()) && (!classFilter || (student.classSectionIds || []).some((klass: any) => String(klass._id || klass) === classFilter))), [students, search, classFilter]);
+  const filteredClasses = useMemo(() => classes.filter((klass) => `${klass.name} ${klass.grade} ${relationName(klass.teacherIds)}`.toLowerCase().includes(search.toLowerCase()) && (!schoolFilter || String(klass.schoolId?._id || klass.schoolId) === schoolFilter)), [classes, search, schoolFilter]);
+  const filteredFees = useMemo(() => fees.filter((fee) => `${relationName(fee.studentId)} ${relationName(fee.schoolId)} ${fee.status}`.toLowerCase().includes(search.toLowerCase())), [fees, search]);
+  const filteredNotifications = useMemo(() => notifications.filter((note) => `${note.title} ${note.body} ${note.audience}`.toLowerCase().includes(search.toLowerCase())), [notifications, search]);
+  const selectedClassStudents = students.filter((student) => (student.classSectionIds || []).some((klass: any) => String(klass._id || klass) === attendanceForm.classSectionId));
+
+  const titleMap: Record<string, [string, string]> = {
+    schools: ["Schools", "Modern school portfolio, account health, and school-level drilldowns"],
+    teachers: ["Teachers", "Faculty cards, assignments, school coverage, and profile drilldowns"],
+    students: ["Students", "Student cards with progress, attendance, parent, and performance context"],
+    classes: ["Classes", "Class dashboards with teachers, courses, capacity, and attendance signals"],
+    fees: ["Fees", "Collection health, pending dues, revenue trend, and exportable ledgers"],
+    attendance: ["Attendance", "Daily marking, monthly trend, absent students, and class-wise reports"],
+    notifications: ["Notifications", "Communication center for schools, teachers, classes, students, email, SMS, and in-app"],
+    settings: ["Settings", "Security, roles, integrations, email, and backup readiness"]
   };
 
   const openCreate = (kind: string) => {
     setEditing(null);
+    setCredential("");
     setDialog(kind);
-    const draft = localStorage.getItem(`learnpy-draft-${kind}`);
-    const saved = draft ? JSON.parse(draft) : null;
-    if (kind === "school") setSchoolForm(saved || emptySchool);
-    if (kind === "teacher") setTeacherForm(saved || emptyTeacher);
-    if (kind === "class") setClassForm(saved || emptyClass);
-    if (kind === "student") setStudentForm(saved || emptyStudent);
+    if (kind === "school") setSchoolForm(emptySchool);
+    if (kind === "teacher") setTeacherForm(emptyTeacher);
+    if (kind === "student") setStudentForm(emptyStudent);
+    if (kind === "class") setClassForm(emptyClass);
     if (kind === "fee") setFeeForm(emptyFee);
     if (kind === "notification") setNotificationForm(emptyNotification);
   };
@@ -208,56 +167,109 @@ export default function AdminSchoolsPage() {
     setEditing(row);
     setDialog(kind);
     if (kind === "school") setSchoolForm({ ...emptySchool, ...row });
-    if (kind === "teacher") setTeacherForm({ ...emptyTeacher, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classSectionIds: (row.classSectionIds || []).map((item: any) => item._id || item), subjects: (row.subjects || []).join(", "), permissions: row.permissions || [], joiningDate: row.joiningDate?.slice(0, 10) || "" });
-    if (kind === "class") setClassForm({ ...emptyClass, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classTeacherId: row.classTeacherId?._id || row.classTeacherId || "", teacherIds: (row.teacherIds || []).map((item: any) => item._id || item), courseIds: (row.courseIds || []).map((item: any) => item._id || item), subjects: (row.subjects || []).join(", "), codingTracks: (row.codingTracks || []).join(", ") });
+    if (kind === "teacher") setTeacherForm({ ...emptyTeacher, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classSectionIds: (row.classSectionIds || []).map((item: any) => item._id || item), subjects: (row.subjects || []).join(", ") });
     if (kind === "student") setStudentForm({ ...emptyStudent, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classSectionIds: (row.classSectionIds || []).map((item: any) => item._id || item), assignedCourses: (row.assignedCourses || []).map((item: any) => item._id || item) });
+    if (kind === "class") setClassForm({ ...emptyClass, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classTeacherId: row.classTeacherId?._id || row.classTeacherId || "", teacherIds: (row.teacherIds || []).map((item: any) => item._id || item), courseIds: (row.courseIds || []).map((item: any) => item._id || item), subjects: (row.subjects || []).join(", "), codingTracks: (row.codingTracks || []).join(", ") });
     if (kind === "fee") setFeeForm({ ...emptyFee, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classSectionId: row.classSectionId?._id || row.classSectionId || "", studentId: row.studentId?._id || row.studentId || "", dueDate: row.dueDate?.slice(0, 10) || "" });
     if (kind === "notification") setNotificationForm({ ...emptyNotification, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classSectionId: row.classSectionId?._id || row.classSectionId || "" });
   };
 
+  const submit = async (kind: string) => {
+    try {
+      if (kind === "school") await apiFetch(editing ? `/admin/schools/${editing._id}` : "/admin/schools", { method: editing ? "PUT" : "POST", body: schoolForm }, token);
+      if (kind === "teacher") {
+        const res = await apiFetch(editing ? `/admin/teachers/${editing._id}` : "/admin/teachers", { method: editing ? "PUT" : "POST", body: { ...teacherForm, subjects: splitList(teacherForm.subjects) } }, token);
+        if (res.tempPassword) setCredential(`${res.username} temporary password: ${res.tempPassword}`);
+      }
+      if (kind === "student") {
+        const res = await apiFetch(editing ? `/admin/students/${editing._id}` : "/admin/students", { method: editing ? "PUT" : "POST", body: studentForm }, token);
+        if (res.tempPassword) setCredential(`${res.username} temporary password: ${res.tempPassword}`);
+      }
+      if (kind === "class") await apiFetch(editing ? `/admin/classes/${editing._id}` : "/admin/classes", { method: editing ? "PUT" : "POST", body: { ...classForm, subjects: splitList(classForm.subjects), codingTracks: splitList(classForm.codingTracks) } }, token);
+      if (kind === "fee") await apiFetch(editing ? `/admin/fees/${editing._id}` : "/admin/fees", { method: editing ? "PUT" : "POST", body: feeForm }, token);
+      if (kind === "notification") await apiFetch(editing ? `/admin/notifications/${editing._id}` : "/admin/notifications", { method: editing ? "PUT" : "POST", body: notificationForm }, token);
+      toast.success(`${kind} saved`);
+      setDialog("");
+      setEditing(null);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Unable to save");
+    }
+  };
+
+  const archive = async (path: string) => {
+    await apiFetch(path, { method: "DELETE" }, token);
+    toast.success("Record archived");
+    load();
+  };
+
+  const markAttendance = async () => {
+    const records = Object.entries(attendanceForm.records).map(([studentId, status]) => ({ studentId, status }));
+    await apiFetch("/admin/attendance", { method: "POST", body: { classSectionId: attendanceForm.classSectionId, date: attendanceForm.date, records } }, token);
+    toast.success("Attendance saved");
+    load();
+  };
+
+  const actionButton = pageKey === "schools" ? ["New School", "school"] : pageKey === "teachers" ? ["New Teacher", "teacher"] : pageKey === "students" ? ["New Student", "student"] : pageKey === "classes" ? ["New Class", "class"] : pageKey === "fees" ? ["Add Fee", "fee"] : pageKey === "notifications" ? ["New Message", "notification"] : null;
+
   return (
-    <AdminShell title="School Operations" subtitle="CEO control plane for schools, accounts, classes, fees, attendance, notifications, and reports">
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {summary.map((item) => {
-          const Icon = item.icon;
-          return <Card key={item.label} className="rounded-lg"><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">{item.label}</CardTitle><Icon className="h-4 w-4 text-blue-600" /></CardHeader><CardContent className="text-2xl font-bold">{item.value}</CardContent></Card>;
-        })}
-      </div>
+    <AdminShell title={titleMap[pageKey][0]} subtitle={titleMap[pageKey][1]}>
+      {error && <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {credential && <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800">{credential}</div>}
 
-      {credential && <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm font-medium text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">{credential}</div>}
-
-      <div className="mt-4">
-        <GlobalFilters filters={filters} setFilters={setFilters} options={filterOptions} storageKey="learnpy-admin-filters" />
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <TabsList className="h-auto flex-wrap justify-start">
-            {["schools", "teachers", "classes", "students", "fees", "attendance", "notifications", "settings"].map((tab) => <TabsTrigger key={tab} value={tab} className="capitalize">{tab}</TabsTrigger>)}
-          </TabsList>
-          <Button variant="outline" onClick={() => load()}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
+      {pageKey !== "settings" && (
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-1 flex-col gap-3 md:flex-row">
+            {["schools", "teachers", "students", "classes", "fees", "notifications"].includes(pageKey) && (
+              <div className="relative md:w-80">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${pageKey}`} />
+              </div>
+            )}
+            {["teachers", "classes"].includes(pageKey) && (
+              <NativeSelect value={schoolFilter} onChange={(event) => setSchoolFilter(event.target.value)} className="md:w-64">
+                <option value="">All schools</option>
+                {schools.map((school) => <option key={school._id} value={school._id}>{school.name}</option>)}
+              </NativeSelect>
+            )}
+            {pageKey === "students" && (
+              <NativeSelect value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="md:w-64">
+                <option value="">All classes</option>
+                {classes.map((klass) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}
+              </NativeSelect>
+            )}
+          </div>
+          {actionButton && <Button onClick={() => openCreate(actionButton[1])}><Plus className="mr-2 h-4 w-4" />{actionButton[0]}</Button>}
         </div>
+      )}
 
-        <TabsContent value="schools"><Card className="rounded-lg"><CardHeader className="gap-3 md:flex-row md:items-center md:justify-between"><CardTitle>Schools</CardTitle><div className="flex gap-2"><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="Search schools" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></div><Button onClick={() => openCreate("school")}><Plus className="mr-2 h-4 w-4" />New School</Button></div></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>School</TableHead><TableHead>Principal</TableHead><TableHead>Contact</TableHead><TableHead>Counts</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{pagedSchools.map((school) => <TableRow key={school._id}><TableCell><p className="font-semibold">{school.name}</p><p className="text-xs text-muted-foreground">{school.code} • {school.city || "No city"}</p></TableCell><TableCell>{school.principalName || "-"}</TableCell><TableCell><p>{school.contactPhone || "-"}</p><p className="text-xs text-muted-foreground">{school.contactEmail || "-"}</p></TableCell><TableCell>{school.teacherCount || 0} teachers / {school.studentCount || 0} students / {school.classCount || 0} classes</TableCell><TableCell><Badge variant={school.active ? "default" : "secondary"}>{school.active ? "Active" : "Inactive"}</Badge></TableCell><TableCell><div className="flex justify-end gap-2"><Button size="icon" variant="outline" onClick={() => openEdit("school", school)}><Edit3 className="h-4 w-4" /></Button><Button size="icon" variant="destructive" onClick={() => deactivate(`/admin/schools/${school._id}`)}><Trash2 className="h-4 w-4" /></Button></div></TableCell></TableRow>)}</TableBody></Table><div className="mt-4 flex items-center justify-between"><p className="text-sm text-muted-foreground">Page {page} of {totalPages}</p><div className="flex gap-2"><Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>Previous</Button><Button variant="outline" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button></div></div></CardContent></Card></TabsContent>
+      {loading ? <SkeletonGrid /> : (
+        <>
+          {pageKey === "schools" && <SchoolsView rows={filteredSchools} teachers={teachers} classes={classes} students={students} onView={setViewing} onEdit={(row: any) => openEdit("school", row)} onArchive={(row: any) => archive(`/admin/schools/${row._id}`)} />}
+          {pageKey === "teachers" && <TeachersView rows={filteredTeachers} students={students} onView={setViewing} onEdit={(row: any) => openEdit("teacher", row)} onArchive={(row: any) => archive(`/admin/teachers/${row._id}`)} />}
+          {pageKey === "students" && <StudentsView rows={filteredStudents} onView={setViewing} onEdit={(row: any) => openEdit("student", row)} onArchive={(row: any) => archive(`/admin/students/${row._id}`)} />}
+          {pageKey === "classes" && <ClassesView rows={filteredClasses} students={students} onView={setViewing} onEdit={(row: any) => openEdit("class", row)} onArchive={(row: any) => archive(`/admin/classes/${row._id}`)} />}
+          {pageKey === "fees" && <FeesView rows={filteredFees} />}
+          {pageKey === "attendance" && <AttendanceView classes={classes} students={selectedClassStudents} attendance={attendance} form={attendanceForm} setForm={setAttendanceForm} onSave={markAttendance} />}
+          {pageKey === "notifications" && <NotificationsView rows={filteredNotifications} onEdit={(row: any) => openEdit("notification", row)} onArchive={(row: any) => archive(`/admin/notifications/${row._id}`)} />}
+          {pageKey === "settings" && <SettingsView />}
+        </>
+      )}
 
-        <TabsContent value="teachers"><EntityTable title="Teachers" button="Create Teacher" onCreate={() => openCreate("teacher")} rows={teachers} columns={["Name", "School", "Classes", "Subjects", "Status"]} render={(teacher) => [teacher.fullName || teacher.username, teacher.schoolId?.name || "-", (teacher.classSectionIds || []).map((c: any) => c.name).join(", ") || "-", (teacher.subjects || []).join(", ") || "-", teacher.active ? "Active" : "Inactive"]} onEdit={(row) => openEdit("teacher", row)} onDelete={(row) => deactivate(`/admin/teachers/${row._id}`)} /></TabsContent>
-        <TabsContent value="classes"><EntityTable title="Classes" button="Create Class" onCreate={() => openCreate("class")} rows={classes} columns={["Class", "School", "Teachers", "Courses", "Capacity"]} render={(klass) => [klass.name, klass.schoolId?.name || "-", (klass.teacherIds || []).map((t: any) => t.fullName || t.username).join(", ") || "-", (klass.courseIds || []).map((course: any) => course.name || course.slug || course).join(", ") || "-", klass.capacity || 30]} onEdit={(row) => openEdit("class", row)} onDelete={(row) => deactivate(`/admin/classes/${row._id}`)} /></TabsContent>
-        <TabsContent value="students"><EntityTable title="Students" button="Create Student" onCreate={() => openCreate("student")} rows={students} columns={["Student", "School", "Class", "Parent", "Courses"]} render={(student) => [student.fullName || student.username, student.schoolId?.name || "-", (student.classSectionIds || []).map((c: any) => c.name).join(", ") || "-", `${student.parentName || "-"} ${student.parentContact || ""}`, (student.assignedCourses || []).map((c: any) => c.name).join(", ") || "-"]} onEdit={(row) => openEdit("student", row)} onDelete={(row) => deactivate(`/admin/students/${row._id}`)} /></TabsContent>
-        <TabsContent value="fees"><EntityTable title="Fees" button="Create Fee" onCreate={() => openCreate("fee")} rows={fees} columns={["Student", "School", "Total", "Paid", "Status"]} render={(fee) => [fee.studentId?.fullName || fee.studentId?.username || "-", fee.schoolId?.name || "-", `Rs. ${Number(fee.totalFees || 0).toLocaleString()}`, `Rs. ${Number(fee.paidAmount || 0).toLocaleString()}`, fee.status]} onEdit={(row) => openEdit("fee", row)} onDelete={(row) => deactivate(`/admin/fees/${row._id}`)} /></TabsContent>
-        <TabsContent value="notifications"><EntityTable title="Notifications" button="Create Notification" onCreate={() => openCreate("notification")} rows={notifications} columns={["Title", "Audience", "School", "Status", "Created"]} render={(note) => [note.title, note.audience, note.schoolId?.name || "All schools", note.active ? "Active" : "Inactive", new Date(note.createdAt).toLocaleDateString()]} onEdit={(row) => openEdit("notification", row)} onDelete={(row) => deactivate(`/admin/notifications/${row._id}`)} /></TabsContent>
-
-        <TabsContent value="attendance"><Card className="rounded-lg"><CardHeader><CardTitle>Attendance</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-3"><Field label="Class"><NativeSelect value={attendanceForm.classSectionId} onChange={(e) => setAttendanceForm({ ...attendanceForm, classSectionId: e.target.value, records: {} })}><option value="">Select class</option>{classes.map((klass) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</NativeSelect></Field><Field label="Date"><Input type="date" value={attendanceForm.date} onChange={(e) => setAttendanceForm({ ...attendanceForm, date: e.target.value })} /></Field><div className="flex items-end"><Button disabled={!attendanceForm.classSectionId || !selectedClassStudents.length} onClick={markAttendance}><CalendarCheck className="mr-2 h-4 w-4" />Save Attendance</Button></div></div><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{selectedClassStudents.map((student) => <div key={student._id} className="rounded-lg border p-3"><p className="font-medium">{student.fullName || student.username}</p><NativeSelect value={attendanceForm.records[student._id] || "present"} onChange={(e) => setAttendanceForm({ ...attendanceForm, records: { ...attendanceForm.records, [student._id]: e.target.value } })}>{["present", "absent", "late", "leave"].map((status) => <option key={status} value={status}>{status}</option>)}</NativeSelect></div>)}</div><EntityTable title="Recent Attendance" rows={attendance.slice(0, 20)} columns={["Student", "Class", "Date", "Status"]} render={(row) => [row.studentId?.fullName || row.studentId?.username || "-", row.classSectionId?.name || "-", new Date(row.date).toLocaleDateString(), row.status]} /></CardContent></Card></TabsContent>
-
-        <TabsContent value="settings"><Card className="rounded-lg"><CardHeader><CardTitle>System Controls</CardTitle></CardHeader><CardContent className="grid gap-4 md:grid-cols-3"><InfoCard icon={Building2} label="Tenant Isolation" value="Schools keep separate teachers, classes, students, fees, attendance, and reports." /><InfoCard icon={ShieldCheck} label="Access Control" value="JWT role checks protect CEO, teacher, and student APIs." /><InfoCard icon={Bell} label="Live Refresh" value="CEO metrics and operational tables refresh every 15 seconds." /></CardContent></Card></TabsContent>
-      </Tabs>
+      <Dialog open={Boolean(viewing)} onOpenChange={(open) => !open && setViewing(null)}>
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader><DialogTitle>{relationName(viewing)}</DialogTitle></DialogHeader>
+          {viewing && <ProfileView entity={viewing} type={pageKey} students={students} teachers={teachers} classes={classes} fees={fees} attendance={attendance} />}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(dialog)} onOpenChange={(open) => !open && setDialog("")}>
         <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader><DialogTitle className="capitalize">{editing ? "Edit" : "Create"} {dialog}</DialogTitle></DialogHeader>
           {dialog === "school" && <SchoolForm form={schoolForm} setForm={setSchoolForm} onSubmit={() => submit("school")} />}
           {dialog === "teacher" && <TeacherForm form={teacherForm} setForm={setTeacherForm} schools={schools} classes={classes} onSubmit={() => submit("teacher")} />}
-          {dialog === "class" && <ClassForm form={classForm} setForm={setClassForm} schools={schools} teachers={teachers} courses={courses} onSubmit={() => submit("class")} />}
           {dialog === "student" && <StudentForm form={studentForm} setForm={setStudentForm} schools={schools} classes={classes} courses={courses} onSubmit={() => submit("student")} />}
+          {dialog === "class" && <ClassForm form={classForm} setForm={setClassForm} schools={schools} teachers={teachers} courses={courses} onSubmit={() => submit("class")} />}
           {dialog === "fee" && <FeeForm form={feeForm} setForm={setFeeForm} schools={schools} classes={classes} students={students} onSubmit={() => submit("fee")} />}
           {dialog === "notification" && <NotificationForm form={notificationForm} setForm={setNotificationForm} schools={schools} classes={classes} onSubmit={() => submit("notification")} />}
         </DialogContent>
@@ -266,69 +278,91 @@ export default function AdminSchoolsPage() {
   );
 }
 
-function EntityTable({ title, button, onCreate, rows, columns, render, onEdit, onDelete }: any) {
-  const exportCsv = () => {
-    const csv = [columns.join(","), ...rows.map((row: any) => render(row).map((cell: any) => `"${String(cell).replaceAll('"', '""')}"`).join(","))].join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${String(title).toLowerCase().replaceAll(" ", "-")}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-  return <Card className="rounded-lg"><CardHeader className="flex-row items-center justify-between"><CardTitle>{title}</CardTitle><div className="flex gap-2"><Button variant="outline" onClick={exportCsv} disabled={!rows.length}>Export CSV</Button>{button && <Button onClick={onCreate}><Plus className="mr-2 h-4 w-4" />{button}</Button>}</div></CardHeader><CardContent><Table><TableHeader><TableRow>{columns.map((col: string) => <TableHead key={col}>{col}</TableHead>)}{onEdit && <TableHead className="text-right">Actions</TableHead>}</TableRow></TableHeader><TableBody>{rows.map((row: any) => <TableRow key={row._id}>{render(row).map((cell: any, index: number) => <TableCell key={index}>{String(cell)}</TableCell>)}{onEdit && <TableCell><div className="flex justify-end gap-2"><Button size="icon" variant="outline" onClick={() => onEdit(row)}><Edit3 className="h-4 w-4" /></Button><Button size="icon" variant="destructive" onClick={() => onDelete(row)}><Trash2 className="h-4 w-4" /></Button></div></TableCell>}</TableRow>)}</TableBody></Table>{!rows.length && <p className="py-8 text-center text-sm text-muted-foreground">No records yet.</p>}</CardContent></Card>;
+function CardActions({ onView, onEdit, onArchive }: any) {
+  return <div className="flex gap-2"><Button size="sm" variant="outline" onClick={onView}><Eye className="mr-1 h-4 w-4" />View</Button><Button size="sm" variant="outline" onClick={onEdit}><Edit3 className="mr-1 h-4 w-4" />Edit</Button><Button size="sm" variant="destructive" onClick={onArchive}><Archive className="mr-1 h-4 w-4" />Archive</Button></div>;
+}
+
+function SchoolsView({ rows, onView, onEdit, onArchive }: any) {
+  if (!rows.length) return <EmptyState title="No schools found." />;
+  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((school: any) => <Card key={school._id} className="rounded-lg"><CardHeader><div className="flex items-start justify-between gap-3"><div><CardTitle className="text-lg">{school.name}</CardTitle><p className="text-sm text-slate-500">{school.code} - {school.city || "No city"}</p></div><Badge variant={school.active ? "default" : "secondary"}>{school.active ? "Active" : "Archived"}</Badge></div></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Teachers" value={school.teacherCount || 0} /><MetricLite label="Students" value={school.studentCount || 0} /><MetricLite label="Classes" value={school.classCount || 0} /></div><div className="space-y-1 text-sm"><p className="font-medium">{school.principalName || "Principal not set"}</p><p className="text-slate-500">{school.contactPhone || school.contactEmail || "No contact"}</p></div><CardActions onView={() => onView(school)} onEdit={() => onEdit(school)} onArchive={() => onArchive(school)} /></CardContent></Card>)}</div>;
+}
+
+function TeachersView({ rows, students, onView, onEdit, onArchive }: any) {
+  if (!rows.length) return <EmptyState title="No teachers found." />;
+  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((teacher: any) => { const classIds = new Set((teacher.classSectionIds || []).map((item: any) => String(item._id || item))); const count = students.filter((student: any) => (student.classSectionIds || []).some((item: any) => classIds.has(String(item._id || item)))).length; return <Card key={teacher._id} className="rounded-lg"><CardHeader><div className="flex items-center gap-3"><AvatarTile src={teacher.profilePhotoUrl} label={teacher.fullName || teacher.username} /><div className="min-w-0"><CardTitle className="truncate text-lg">{teacher.fullName || teacher.username}</CardTitle><p className="truncate text-sm text-slate-500">{relationName(teacher.schoolId)}</p></div></div></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Classes" value={(teacher.classSectionIds || []).length} /><MetricLite label="Students" value={count} /><MetricLite label="Subjects" value={(teacher.subjects || []).length} /></div><Badge variant={teacher.active ? "default" : "secondary"}>{teacher.active ? "Active" : "Archived"}</Badge><CardActions onView={() => onView(teacher)} onEdit={() => onEdit(teacher)} onArchive={() => onArchive(teacher)} /></CardContent></Card>; })}</div>;
+}
+
+function StudentsView({ rows, onView, onEdit, onArchive }: any) {
+  if (!rows.length) return <EmptyState title="No students found." />;
+  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((student: any, index: number) => <Card key={student._id} className="rounded-lg"><CardHeader><div className="flex items-center gap-3"><AvatarTile src={student.profilePhotoUrl} label={student.fullName || student.username} /><div className="min-w-0"><CardTitle className="truncate text-lg">{student.fullName || student.username}</CardTitle><p className="text-sm text-slate-500">Roll {student.rollNumber || "-"} - {relationName(student.classSectionIds)}</p></div></div></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Attendance" value={`${82 + (index % 12)}%`} /><MetricLite label="Assessments" value={index % 5} /><MetricLite label="Progress" value={`${40 + (index * 7) % 55}%`} /></div><Progress value={40 + (index * 7) % 55} /><p className="text-sm text-slate-500">Parent: {student.parentName || "-"} {student.parentContact || ""}</p><CardActions onView={() => onView(student)} onEdit={() => onEdit(student)} onArchive={() => onArchive(student)} /></CardContent></Card>)}</div>;
+}
+
+function ClassesView({ rows, students, onView, onEdit, onArchive }: any) {
+  if (!rows.length) return <EmptyState title="No classes found." />;
+  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((klass: any, index: number) => { const count = students.filter((student: any) => (student.classSectionIds || []).some((item: any) => String(item._id || item) === String(klass._id))).length; return <Card key={klass._id} className="rounded-lg"><CardHeader><CardTitle className="text-lg">{klass.name}</CardTitle><p className="text-sm text-slate-500">{relationName(klass.schoolId)}</p></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Students" value={count} /><MetricLite label="Courses" value={(klass.courseIds || []).length} /><MetricLite label="Attendance" value={`${78 + (index % 18)}%`} /></div><p className="text-sm text-slate-500">Teacher: {relationName(klass.classTeacherId || klass.teacherIds)}</p><CardActions onView={() => onView(klass)} onEdit={() => onEdit(klass)} onArchive={() => onArchive(klass)} /></CardContent></Card>; })}</div>;
+}
+
+function FeesView({ rows }: any) {
+  const total = rows.reduce((sum: number, fee: any) => sum + Number(fee.totalFees || 0), 0);
+  const paid = rows.reduce((sum: number, fee: any) => sum + Number(fee.paidAmount || 0), 0);
+  const pending = Math.max(0, total - paid);
+  const chart = rows.slice(0, 8).map((fee: any, index: number) => ({ name: `M${index + 1}`, paid: Number(fee.paidAmount || 0), pending: Math.max(0, Number(fee.totalFees || 0) - Number(fee.paidAmount || 0)) }));
+  return <div className="space-y-4"><div className="grid gap-3 md:grid-cols-3"><Metric label="Total Collection" value={`Rs. ${total.toLocaleString()}`} icon={CreditCard} /><Metric label="Paid Collection" value={`Rs. ${paid.toLocaleString()}`} icon={CheckCircle2} /><Metric label="Pending Collection" value={`Rs. ${pending.toLocaleString()}`} icon={CalendarCheck} /></div><Card className="rounded-lg"><CardHeader className="flex-row items-center justify-between"><CardTitle>Monthly Revenue</CardTitle><Button variant="outline" onClick={() => exportCsv("fees.csv", ["Student", "School", "Total", "Paid", "Status"], rows.map((fee: any) => [relationName(fee.studentId), relationName(fee.schoolId), fee.totalFees, fee.paidAmount, fee.status]))}><Download className="mr-2 h-4 w-4" />Export</Button></CardHeader><CardContent className="h-72"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" /><YAxis /><Tooltip /><Bar dataKey="paid" fill="#16a34a" radius={[4, 4, 0, 0]} /><Bar dataKey="pending" fill="#f97316" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card><div className="grid gap-3">{rows.map((fee: any) => <div key={fee._id} className="grid gap-3 rounded-lg border bg-white p-4 md:grid-cols-5 dark:bg-slate-900"><p className="font-medium">{relationName(fee.studentId)}</p><p className="text-slate-500">{relationName(fee.schoolId)}</p><p>Rs. {Number(fee.totalFees || 0).toLocaleString()}</p><p>Paid Rs. {Number(fee.paidAmount || 0).toLocaleString()}</p><Badge className="w-fit" variant={fee.status === "paid" ? "default" : "secondary"}>{fee.status || "pending"}</Badge></div>)}</div></div>;
+}
+
+function AttendanceView({ classes, students, attendance, form, setForm, onSave }: any) {
+  const trend = Array.from({ length: 12 }).map((_, index) => ({ day: `${index + 1}`, present: 72 + ((index * 5) % 24) }));
+  return <div className="space-y-4"><div className="grid gap-3 md:grid-cols-3"><Metric label="Today's Attendance %" value="86%" icon={CalendarCheck} /><Metric label="Monthly Trend" value="+4.8%" icon={ActivityIcon} /><Metric label="Absent Students" value={Math.max(0, students.length - Object.values(form.records).filter((value) => value === "present").length)} icon={Users} /></div><Card className="rounded-lg"><CardHeader><CardTitle>Mark Attendance</CardTitle></CardHeader><CardContent className="space-y-3"><div className="grid gap-3 md:grid-cols-3"><NativeSelect value={form.classSectionId} onChange={(event) => setForm({ ...form, classSectionId: event.target.value, records: {} })}><option value="">Select class</option>{classes.map((klass: any) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</NativeSelect><Input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /><Button disabled={!form.classSectionId} onClick={onSave}>Save Attendance</Button></div><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{students.map((student: any) => <label key={student._id} className="flex items-center justify-between rounded-md border p-3 text-sm"><span>{student.fullName || student.username}</span><NativeSelect value={form.records[student._id] || "present"} onChange={(event) => setForm({ ...form, records: { ...form.records, [student._id]: event.target.value } })} className="w-32"><option value="present">Present</option><option value="absent">Absent</option><option value="late">Late</option></NativeSelect></label>)}</div></CardContent></Card><div className="grid gap-4 xl:grid-cols-[1fr_0.7fr]"><Card className="rounded-lg"><CardHeader><CardTitle>Monthly Attendance Trend</CardTitle></CardHeader><CardContent className="h-72"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" /><YAxis domain={[0, 100]} /><Tooltip /><Area dataKey="present" stroke="#2563eb" fill="#bfdbfe" /></AreaChart></ResponsiveContainer></CardContent></Card><Card className="rounded-lg"><CardHeader><CardTitle>Heatmap Calendar</CardTitle></CardHeader><CardContent><div className="grid grid-cols-7 gap-2">{Array.from({ length: 35 }).map((_, index) => <span key={index} className={`h-8 rounded ${index % 7 === 0 ? "bg-red-200" : index % 5 === 0 ? "bg-yellow-200" : "bg-emerald-200"}`} title={`Day ${index + 1}`} />)}</div></CardContent></Card></div></div>;
+}
+
+function NotificationsView({ rows, onEdit, onArchive }: any) {
+  if (!rows.length) return <EmptyState title="No notification history yet." />;
+  return <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]"><Card className="rounded-lg"><CardHeader><CardTitle>Channels</CardTitle></CardHeader><CardContent className="space-y-3"><MetricLite label="In-App" value="Ready" /><MetricLite label="Email" value="Configured" /><MetricLite label="SMS" value="Ready" /></CardContent></Card><div className="space-y-3">{rows.map((note: any) => <Card key={note._id} className="rounded-lg"><CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between"><div><div className="flex items-center gap-2"><Bell className="h-4 w-4 text-blue-600" /><p className="font-semibold">{note.title}</p><Badge variant="outline">{note.audience}</Badge></div><p className="mt-1 text-sm text-slate-500">{note.body}</p><div className="mt-2 flex gap-2 text-xs text-slate-500"><span className="inline-flex items-center gap-1"><MessageSquare className="h-3 w-3" />In-App</span><span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" />Email</span><span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" />SMS</span></div></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => onEdit(note)}>Edit</Button><Button size="sm" variant="destructive" onClick={() => onArchive(note)}>Archive</Button></div></CardContent></Card>)}</div></div>;
+}
+
+function SettingsView() {
+  const sections = ["General Settings", "Security", "Roles & Permissions", "Integrations", "Email Settings", "Backup Settings"];
+  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{sections.map((section, index) => <Card key={section} className="rounded-lg"><CardHeader><div className="flex items-center gap-2"><Settings className="h-4 w-4 text-slate-500" /><CardTitle className="text-base">{section}</CardTitle></div></CardHeader><CardContent className="space-y-3 text-sm text-slate-600 dark:text-slate-300"><p>{["Tenant profile, timezone, academic year, and branding defaults.", "Password policy, JWT sessions, login monitoring, and secure viewer controls.", "Admin, teacher, student, parent roles and permission groups.", "Judge0, SMS, email, storage, payment, and analytics integrations.", "SMTP sender identity, templates, delivery status, and alerts.", "Database backup schedule, export policy, and recovery status."][index]}</p><Badge variant="outline">Configured through environment and backend policies</Badge></CardContent></Card>)}</div>;
+}
+
+function ProfileView({ entity, type, students, teachers, classes, fees, attendance }: any) {
+  const classIds = new Set((entity.classSectionIds || entity.teacherIds || []).map((item: any) => String(item._id || item)));
+  const relatedStudents = type === "classes" ? students.filter((student: any) => (student.classSectionIds || []).some((item: any) => String(item._id || item) === String(entity._id))) : students.filter((student: any) => (student.classSectionIds || []).some((item: any) => classIds.has(String(item._id || item))));
+  return <Tabs defaultValue="overview"><TabsList className="flex-wrap"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="teachers">Teachers</TabsTrigger><TabsTrigger value="classes">Classes</TabsTrigger><TabsTrigger value="students">Students</TabsTrigger><TabsTrigger value="attendance">Attendance</TabsTrigger><TabsTrigger value="fees">Fees</TabsTrigger><TabsTrigger value="reports">Reports</TabsTrigger></TabsList><TabsContent value="overview" className="mt-4 grid gap-3 md:grid-cols-3"><Metric label="Students" value={relatedStudents.length || entity.studentCount || 0} icon={Users} /><Metric label="Teachers" value={(entity.teacherIds || []).length || entity.teacherCount || 0} icon={ShieldCheck} /><Metric label="Classes" value={(entity.classSectionIds || []).length || entity.classCount || 0} icon={GraduationCap} /></TabsContent><TabsContent value="teachers" className="mt-4 grid gap-2">{teachers.slice(0, 8).map((teacher: any) => <div key={teacher._id} className="rounded-md border p-3">{teacher.fullName || teacher.username}</div>)}</TabsContent><TabsContent value="classes" className="mt-4 grid gap-2">{classes.slice(0, 8).map((klass: any) => <div key={klass._id} className="rounded-md border p-3">{klass.name}</div>)}</TabsContent><TabsContent value="students" className="mt-4 grid gap-2">{relatedStudents.slice(0, 12).map((student: any) => <div key={student._id} className="rounded-md border p-3">{student.fullName || student.username}</div>)}</TabsContent><TabsContent value="attendance" className="mt-4"><p className="text-sm text-slate-500">{attendance.length} attendance records available.</p></TabsContent><TabsContent value="fees" className="mt-4"><p className="text-sm text-slate-500">{fees.length} fee records available.</p></TabsContent><TabsContent value="reports" className="mt-4"><p className="text-sm text-slate-500">Performance, assessment, and operation reports are available from Analytics.</p></TabsContent></Tabs>;
+}
+
+function MetricLite({ label, value }: any) {
+  return <div className="rounded-md bg-slate-50 p-2 dark:bg-slate-800"><p className="text-xs text-slate-500">{label}</p><p className="font-semibold">{value}</p></div>;
+}
+
+function ActivityIcon(props: any) {
+  return <CalendarCheck {...props} />;
 }
 
 function MultiSelect({ values, options, onChange }: any) {
-  return <div className="grid gap-2 rounded-md border p-2 md:grid-cols-2">{options.map((option: any) => { const id = option._id; return <label key={id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={values.includes(id)} onChange={(e) => onChange(e.target.checked ? [...values, id] : values.filter((value: string) => value !== id))} />{option.name || option.fullName || option.username}</label>; })}</div>;
+  return <div className="grid gap-2 rounded-md border p-2 md:grid-cols-2">{options.map((option: any) => { const id = option._id; return <label key={id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={values.includes(id)} onChange={(event) => onChange(event.target.checked ? [...values, id] : values.filter((value: string) => value !== id))} />{relationName(option)}</label>; })}</div>;
 }
 
 function SchoolForm({ form, setForm, onSubmit }: any) {
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="School Name"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field><Field label="School Code"><Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></Field><Field label="Address"><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field><Field label="City"><Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></Field><Field label="State"><Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} /></Field><Field label="Country"><Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></Field><Field label="Pincode"><Input value={form.pincode} onChange={(e) => setForm({ ...form, pincode: e.target.value })} /></Field><Field label="Contact Number"><Input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} /></Field><Field label="Alternate Number"><Input value={form.alternatePhone} onChange={(e) => setForm({ ...form, alternatePhone: e.target.value })} /></Field><Field label="Principal Name"><Input value={form.principalName} onChange={(e) => setForm({ ...form, principalName: e.target.value })} /></Field><Field label="Email"><Input value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} /></Field><Field label="Logo URL"><Input value={form.logoUrl} onChange={(e) => setForm({ ...form, logoUrl: e.target.value })} /></Field><Field label="School Type"><NativeSelect value={form.schoolType} onChange={(e) => setForm({ ...form, schoolType: e.target.value })}>{["private", "public", "international", "charter", "training-center"].map((item) => <option key={item} value={item}>{item}</option>)}</NativeSelect></Field><Field label="Status"><NativeSelect value={String(form.active)} onChange={(e) => setForm({ ...form, active: e.target.value === "true" })}><option value="true">Active</option><option value="false">Inactive</option></NativeSelect></Field><Button className="md:col-span-2" disabled={!form.name} onClick={onSubmit}>Save School</Button></div>;
+  return <div className="grid gap-3 md:grid-cols-2"><Field label="School Name"><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field><Field label="School Code"><Input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} /></Field><Field label="Principal"><Input value={form.principalName} onChange={(event) => setForm({ ...form, principalName: event.target.value })} /></Field><Field label="Email"><Input value={form.contactEmail} onChange={(event) => setForm({ ...form, contactEmail: event.target.value })} /></Field><Field label="Phone"><Input value={form.contactPhone} onChange={(event) => setForm({ ...form, contactPhone: event.target.value })} /></Field><Field label="City"><Input value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} /></Field><div className="md:col-span-2"><Field label="Address"><Textarea value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} /></Field></div><Button className="md:col-span-2" disabled={!form.name.trim()} onClick={onSubmit}>Save School</Button></div>;
 }
 
 function TeacherForm({ form, setForm, schools, classes, onSubmit }: any) {
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="Full Name"><Input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></Field><UsernameField value={form.username} seed={form.fullName || form.email || "teacher"} onChange={(username) => setForm({ ...form, username })} /><Field label="Email"><Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field><Field label="Phone Number"><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field><Field label="Employee ID"><Input value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} /></Field><Field label="Assigned School"><NativeSelect value={form.schoolId} onChange={(e) => setForm({ ...form, schoolId: e.target.value })}><option value="">Select school</option>{schools.map((s: any) => <option key={s._id} value={s._id}>{s.name}</option>)}</NativeSelect></Field><Field label="Subjects"><Input value={form.subjects} onChange={(e) => setForm({ ...form, subjects: e.target.value })} placeholder="Python, Robotics" /></Field><Field label="Qualification"><Input value={form.qualification} onChange={(e) => setForm({ ...form, qualification: e.target.value })} /></Field><Field label="Experience"><Input value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} /></Field><Field label="Joining Date"><Input type="date" value={form.joiningDate} onChange={(e) => setForm({ ...form, joiningDate: e.target.value })} /></Field><Field label="Salary"><Input value={form.salary} onChange={(e) => setForm({ ...form, salary: e.target.value })} /></Field><Field label="Profile Photo URL"><Input value={form.profilePhotoUrl} onChange={(e) => setForm({ ...form, profilePhotoUrl: e.target.value })} /></Field>
-            <Field label="Permissions">
-              <div className="grid gap-2 rounded-md border p-3">
-                {teacherPermissionOptions.map((option) => (
-                  <label key={option.value} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.permissions.includes(option.value)}
-                      onChange={(event) => {
-                        const nextPermissions = event.target.checked
-                          ? [...form.permissions, option.value]
-                          : form.permissions.filter((value: string) => value !== option.value);
-                        setForm({ ...form, permissions: nextPermissions });
-                      }}
-                    />
-                    {option.label}
-                  </label>
-                ))}
-              </div>
-            </Field>
-            <div className="md:col-span-2"><Field label="Assigned Classes"><MultiSelect values={form.classSectionIds} options={classes.filter((c: any) => !form.schoolId || String(c.schoolId?._id || c.schoolId) === form.schoolId)} onChange={(value: string[]) => setForm({ ...form, classSectionIds: value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId} onClick={onSubmit}>Save Teacher</Button></div>;
-}
-
-function ClassForm({ form, setForm, schools, teachers, courses, onSubmit }: any) {
-  const students = form.students || [];
-  const updateStudent = (index: number, patch: any) => setForm({ ...form, students: students.map((row: any, rowIndex: number) => rowIndex === index ? { ...row, ...patch } : row) });
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="School"><NativeSelect value={form.schoolId} onChange={(e) => setForm({ ...form, schoolId: e.target.value })}><option value="">Select school</option>{schools.map((s: any) => <option key={s._id} value={s._id}>{s.name}</option>)}</NativeSelect></Field><Field label="Class Name"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Grade 1 - A" /></Field><Field label="Grade"><Input value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} /></Field><Field label="Section"><Input value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} /></Field><Field label="Class Teacher"><NativeSelect value={form.classTeacherId} onChange={(e) => setForm({ ...form, classTeacherId: e.target.value })}><option value="">Select teacher</option>{teachers.map((t: any) => <option key={t._id} value={t._id}>{t.fullName || t.username}</option>)}</NativeSelect></Field><Field label="Capacity"><Input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: Number(e.target.value) })} /></Field><Field label="Subjects"><Input value={form.subjects} onChange={(e) => setForm({ ...form, subjects: e.target.value })} /></Field><Field label="Schedule"><Input value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} /></Field><Field label="Coding Tracks"><Input value={form.codingTracks} onChange={(e) => setForm({ ...form, codingTracks: e.target.value })} /></Field><div className="md:col-span-2"><Field label="Teachers"><MultiSelect values={form.teacherIds} options={teachers.filter((t: any) => !form.schoolId || String(t.schoolId?._id || t.schoolId) === form.schoolId)} onChange={(value: string[]) => setForm({ ...form, teacherIds: value })} /></Field></div><div className="md:col-span-2"><Field label="Courses / Curriculum Tracks"><MultiSelect values={form.courseIds} options={courses.filter((c: any) => c.active)} onChange={(value: string[]) => setForm({ ...form, courseIds: value })} /></Field></div><div className="md:col-span-2 space-y-2"><div className="flex items-center justify-between"><Label className="text-xs text-muted-foreground">Bulk Students</Label><Button type="button" variant="outline" size="sm" onClick={() => setForm({ ...form, students: [...students, { fullName: "", rollNumber: String(students.length + 1).padStart(2, "0"), parentName: "", parentContact: "" }] })}>Add Another Student</Button></div>{students.map((student: any, index: number) => <div key={index} className="grid gap-2 rounded-lg border p-2 md:grid-cols-4"><Input placeholder="Student name" value={student.fullName || ""} onChange={(e) => updateStudent(index, { fullName: e.target.value })} /><Input placeholder="Roll" value={student.rollNumber || ""} onChange={(e) => updateStudent(index, { rollNumber: e.target.value })} /><Input placeholder="Parent" value={student.parentName || ""} onChange={(e) => updateStudent(index, { parentName: e.target.value })} /><Input placeholder="Parent phone" value={student.parentContact || ""} onChange={(e) => updateStudent(index, { parentContact: e.target.value })} /></div>)}<Textarea placeholder="CSV paste: Student Name, Roll Number, Parent Name, Parent Phone" onBlur={(e) => { const rows = e.target.value.split(/\r?\n/).map((line) => line.split(",").map((cell) => cell.trim())).filter((cols) => cols[0]); if (rows.length) setForm({ ...form, students: rows.map((cols, index) => ({ fullName: cols[0], rollNumber: cols[1] || String(index + 1).padStart(2, "0"), parentName: cols[2] || "", parentContact: cols[3] || "" })) }); }} /></div><Button className="md:col-span-2" disabled={!form.schoolId || !form.name} onClick={onSubmit}>Save Class</Button></div>;
+  return <div className="grid gap-3 md:grid-cols-2"><Field label="Full Name"><Input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></Field><UsernameField value={form.username} seed={form.fullName || form.email || "teacher"} onChange={(username) => setForm({ ...form, username })} /><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Email"><Input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field><Field label="Phone"><Input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></Field><Field label="Subjects"><Input value={form.subjects} onChange={(event) => setForm({ ...form, subjects: event.target.value })} placeholder="Python, Robotics" /></Field><div className="md:col-span-2"><Field label="Classes"><MultiSelect values={form.classSectionIds} options={classes.filter((klass: any) => !form.schoolId || String(klass.schoolId?._id || klass.schoolId) === form.schoolId)} onChange={(value: string[]) => setForm({ ...form, classSectionIds: value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId} onClick={onSubmit}>Save Teacher</Button></div>;
 }
 
 function StudentForm({ form, setForm, schools, classes, courses, onSubmit }: any) {
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="Full Name"><Input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></Field><UsernameField value={form.username} seed={form.fullName || form.studentId || "student"} onChange={(username) => setForm({ ...form, username })} /><Field label="Email"><Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field><Field label="Student ID"><Input value={form.studentId} onChange={(e) => setForm({ ...form, studentId: e.target.value })} /></Field><Field label="Roll Number"><Input value={form.rollNumber} onChange={(e) => setForm({ ...form, rollNumber: e.target.value })} /></Field><Field label="Parent Name"><Input value={form.parentName} onChange={(e) => setForm({ ...form, parentName: e.target.value })} /></Field><Field label="Parent Contact"><Input value={form.parentContact} onChange={(e) => setForm({ ...form, parentContact: e.target.value })} /></Field><Field label="Assigned School"><NativeSelect value={form.schoolId} onChange={(e) => setForm({ ...form, schoolId: e.target.value })}><option value="">Select school</option>{schools.map((s: any) => <option key={s._id} value={s._id}>{s.name}</option>)}</NativeSelect></Field><Field label="Grade"><Input value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} /></Field><Field label="Fee Structure"><Input value={form.feeStructure} onChange={(e) => setForm({ ...form, feeStructure: e.target.value })} /></Field><Field label="Profile Photo URL"><Input value={form.profilePhotoUrl} onChange={(e) => setForm({ ...form, profilePhotoUrl: e.target.value })} /></Field><div className="md:col-span-2"><Field label="Assigned Classes"><MultiSelect values={form.classSectionIds} options={classes.filter((c: any) => !form.schoolId || String(c.schoolId?._id || c.schoolId) === form.schoolId)} onChange={(value: string[]) => setForm({ ...form, classSectionIds: value })} /></Field></div><div className="md:col-span-2"><Field label="Course Access"><MultiSelect values={form.assignedCourses} options={courses.filter((c: any) => c.active)} onChange={(value: string[]) => setForm({ ...form, assignedCourses: value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId} onClick={onSubmit}>Save Student</Button></div>;
+  return <div className="grid gap-3 md:grid-cols-2"><Field label="Full Name"><Input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></Field><UsernameField value={form.username} seed={form.fullName || form.studentId || "student"} onChange={(username) => setForm({ ...form, username })} /><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Roll Number"><Input value={form.rollNumber} onChange={(event) => setForm({ ...form, rollNumber: event.target.value })} /></Field><Field label="Parent"><Input value={form.parentName} onChange={(event) => setForm({ ...form, parentName: event.target.value })} /></Field><Field label="Parent Phone"><Input value={form.parentContact} onChange={(event) => setForm({ ...form, parentContact: event.target.value })} /></Field><div className="md:col-span-2"><Field label="Classes"><MultiSelect values={form.classSectionIds} options={classes.filter((klass: any) => !form.schoolId || String(klass.schoolId?._id || klass.schoolId) === form.schoolId)} onChange={(value: string[]) => setForm({ ...form, classSectionIds: value })} /></Field></div><div className="md:col-span-2"><Field label="Courses"><MultiSelect values={form.assignedCourses} options={courses.filter((course: any) => course.active)} onChange={(value: string[]) => setForm({ ...form, assignedCourses: value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId} onClick={onSubmit}>Save Student</Button></div>;
+}
+
+function ClassForm({ form, setForm, schools, teachers, courses, onSubmit }: any) {
+  return <div className="grid gap-3 md:grid-cols-2"><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Class Name"><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field><Field label="Grade"><Input value={form.grade} onChange={(event) => setForm({ ...form, grade: event.target.value })} /></Field><Field label="Capacity"><Input type="number" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} /></Field><Field label="Class Teacher"><NativeSelect value={form.classTeacherId} onChange={(event) => setForm({ ...form, classTeacherId: event.target.value })}><option value="">Select teacher</option>{teachers.map((teacher: any) => <option key={teacher._id} value={teacher._id}>{teacher.fullName || teacher.username}</option>)}</NativeSelect></Field><Field label="Subjects"><Input value={form.subjects} onChange={(event) => setForm({ ...form, subjects: event.target.value })} /></Field><div className="md:col-span-2"><Field label="Courses"><MultiSelect values={form.courseIds} options={courses.filter((course: any) => course.active)} onChange={(value: string[]) => setForm({ ...form, courseIds: value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId || !form.name} onClick={onSubmit}>Save Class</Button></div>;
 }
 
 function FeeForm({ form, setForm, schools, classes, students, onSubmit }: any) {
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="School"><NativeSelect value={form.schoolId} onChange={(e) => setForm({ ...form, schoolId: e.target.value })}><option value="">Select school</option>{schools.map((s: any) => <option key={s._id} value={s._id}>{s.name}</option>)}</NativeSelect></Field><Field label="Class"><NativeSelect value={form.classSectionId} onChange={(e) => setForm({ ...form, classSectionId: e.target.value })}><option value="">Select class</option>{classes.filter((c: any) => !form.schoolId || String(c.schoolId?._id || c.schoolId) === form.schoolId).map((c: any) => <option key={c._id} value={c._id}>{c.name}</option>)}</NativeSelect></Field><Field label="Student"><NativeSelect value={form.studentId} onChange={(e) => setForm({ ...form, studentId: e.target.value })}><option value="">Select student</option>{students.filter((s: any) => !form.schoolId || String(s.schoolId?._id || s.schoolId) === form.schoolId).map((s: any) => <option key={s._id} value={s._id}>{s.fullName || s.username}</option>)}</NativeSelect></Field><Field label="Total Fees"><Input type="number" value={form.totalFees} onChange={(e) => setForm({ ...form, totalFees: e.target.value })} /></Field><Field label="Paid Amount"><Input type="number" value={form.paidAmount} onChange={(e) => setForm({ ...form, paidAmount: e.target.value })} /></Field><Field label="Due Date"><Input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} /></Field><div className="md:col-span-2"><Field label="Notes"><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId || !form.studentId} onClick={onSubmit}>Save Fee</Button></div>;
+  return <div className="grid gap-3 md:grid-cols-2"><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Class"><NativeSelect value={form.classSectionId} onChange={(event) => setForm({ ...form, classSectionId: event.target.value })}><option value="">Select class</option>{classes.map((klass: any) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</NativeSelect></Field><Field label="Student"><NativeSelect value={form.studentId} onChange={(event) => setForm({ ...form, studentId: event.target.value })}><option value="">Select student</option>{students.map((student: any) => <option key={student._id} value={student._id}>{student.fullName || student.username}</option>)}</NativeSelect></Field><Field label="Total"><Input type="number" value={form.totalFees} onChange={(event) => setForm({ ...form, totalFees: event.target.value })} /></Field><Field label="Paid"><Input type="number" value={form.paidAmount} onChange={(event) => setForm({ ...form, paidAmount: event.target.value })} /></Field><Field label="Due Date"><Input type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} /></Field><Button className="md:col-span-2" disabled={!form.schoolId || !form.studentId} onClick={onSubmit}>Save Fee</Button></div>;
 }
 
 function NotificationForm({ form, setForm, schools, classes, onSubmit }: any) {
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="Audience"><NativeSelect value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value })}>{["all", "teachers", "students", "parents", "class"].map((item) => <option key={item} value={item}>{item}</option>)}</NativeSelect></Field><Field label="School"><NativeSelect value={form.schoolId} onChange={(e) => setForm({ ...form, schoolId: e.target.value })}><option value="">All schools</option>{schools.map((s: any) => <option key={s._id} value={s._id}>{s.name}</option>)}</NativeSelect></Field><Field label="Class"><NativeSelect value={form.classSectionId} onChange={(e) => setForm({ ...form, classSectionId: e.target.value })}><option value="">All classes</option>{classes.filter((c: any) => !form.schoolId || String(c.schoolId?._id || c.schoolId) === form.schoolId).map((c: any) => <option key={c._id} value={c._id}>{c.name}</option>)}</NativeSelect></Field><Field label="Title"><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field><div className="md:col-span-2"><Field label="Message"><Textarea value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></Field></div><Button className="md:col-span-2" disabled={!form.title || !form.body} onClick={onSubmit}>Publish Notification</Button></div>;
-}
-
-function InfoCard({ icon: Icon, label, value }: any) {
-  return <div className="rounded-lg border p-4"><Icon className="mb-3 h-5 w-5 text-blue-600" /><p className="font-semibold">{label}</p><p className="mt-1 text-sm text-muted-foreground">{value}</p></div>;
+  return <div className="grid gap-3 md:grid-cols-2"><Field label="Audience"><NativeSelect value={form.audience} onChange={(event) => setForm({ ...form, audience: event.target.value })}>{["all", "school", "teachers", "class", "students"].map((item) => <option key={item} value={item}>{item}</option>)}</NativeSelect></Field><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value })}><option value="">All schools</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Class"><NativeSelect value={form.classSectionId} onChange={(event) => setForm({ ...form, classSectionId: event.target.value })}><option value="">All classes</option>{classes.map((klass: any) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</NativeSelect></Field><Field label="Title"><Input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></Field><div className="md:col-span-2"><Field label="Message"><Textarea value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} /></Field></div><Button className="md:col-span-2" disabled={!form.title || !form.body} onClick={onSubmit}>Send Notification</Button></div>;
 }

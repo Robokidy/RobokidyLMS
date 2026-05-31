@@ -18,7 +18,7 @@ const materialSchema = new Schema(
     grade: { type: String, default: "" },
     type: { 
       type: String, 
-      enum: ["pdf", "video", "notes", "image", "worksheet", "zip", "code", "book", "other"], 
+      enum: ["pdf", "video", "notes", "image", "worksheet", "presentation", "zip", "code", "book", "other"], 
       required: true 
     },
     tags: [{ type: String }],
