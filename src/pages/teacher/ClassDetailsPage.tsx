@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Activity, BarChart3, BookOpen, CalendarCheck, ClipboardList, Code, Users } from "lucide-react";
+import { Activity, BarChart3, BookOpen, CalendarCheck, ClipboardList, Code, CreditCard, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { teacherApi } from "@/services/teacherApi";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ClassFeeView } from "@/components/fees";
+
+function formatCurrency(amount: any, currency = "INR") {
+  return `${currency === "INR" ? "Rs." : currency} ${Number(amount || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
 
 export default function ClassDetailsPage() {
   const { id } = useParams();
@@ -78,7 +83,7 @@ export default function ClassDetailsPage() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 xl:grid-cols-4">
+        <div className="mt-6 grid gap-4 xl:grid-cols-5">
           <Card className="rounded-3xl">
             <CardHeader className="flex items-center justify-between gap-2"><CardTitle>Students</CardTitle><Users className="h-4 w-4" /></CardHeader>
             <CardContent>{summary.students}</CardContent>
@@ -95,13 +100,18 @@ export default function ClassDetailsPage() {
             <CardHeader className="flex items-center justify-between gap-2"><CardTitle>Materials</CardTitle><BookOpen className="h-4 w-4" /></CardHeader>
             <CardContent>{summary.materials}</CardContent>
           </Card>
+          <Card className="rounded-3xl">
+            <CardHeader className="flex items-center justify-between gap-2"><CardTitle>Class Fee</CardTitle><CreditCard className="h-4 w-4" /></CardHeader>
+            <CardContent>{formatCurrency(klass.feeAmount, klass.currency)}</CardContent>
+          </Card>
         </div>
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid grid-cols-3 gap-2 md:grid-cols-6">
+          <TabsList className="grid grid-cols-3 gap-2 md:grid-cols-7">
             <TabsTrigger value="students">Students</TabsTrigger>
+            <TabsTrigger value="fees">Fees</TabsTrigger>
             <TabsTrigger value="attendance">Attendance</TabsTrigger>
             <TabsTrigger value="assignments">Assignments</TabsTrigger>
             <TabsTrigger value="materials">Materials</TabsTrigger>
@@ -133,6 +143,9 @@ export default function ClassDetailsPage() {
                 <p className="text-sm text-slate-500">No students are currently assigned to this class.</p>
               )}
             </div>
+          </TabsContent>
+          <TabsContent value="fees" className="mt-4">
+            <ClassFeeView classId={klass._id} className={klass.name} />
           </TabsContent>
           <TabsContent value="attendance" className="mt-4">
             <div className="space-y-4">

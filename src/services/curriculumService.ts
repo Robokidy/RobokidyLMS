@@ -3,11 +3,37 @@ import type { Lesson, Course } from "@/types";
 
 export interface LessonCreateParams {
   title: string;
+  description?: string;
   content: string;
+  contentMarkdown?: string;
   courseId: string;
+  module?: string;
+  chapter?: string;
+  courseTrackId?: string;
   objectives?: string[];
+  keyPoints?: string[];
   duration?: number;
+  difficulty?: string;
+  tags?: string[];
+  visibility?: string;
+  gradeLevels?: string[];
+  classSectionIds?: string[];
+  unlockType?: string;
+  unlockDate?: string;
+  unlockAfterLessonIds?: string[];
+  unlockAfterAssessmentId?: string;
+  unlockRequiresApproval?: boolean;
+  thumbnailUrl?: string;
+  bannerUrl?: string;
+  coverUrl?: string;
+  contentBlocks?: any[];
+  attachments?: any[];
+  prerequisites?: string[];
+  status?: string;
+  isPublished?: boolean;
 }
+
+export interface LessonUpdateParams extends Partial<LessonCreateParams> {}
 
 export interface CurriculumModuleParams {
   title: string;
@@ -69,7 +95,7 @@ export class CurriculumService {
    */
   static async updateLesson(
     id: string,
-    updates: Partial<Lesson>,
+    updates: LessonUpdateParams,
     token: string,
     role: "admin" | "teacher" = "admin"
   ): Promise<Lesson> {

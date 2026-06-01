@@ -19,12 +19,22 @@ const Announcement = require("../models/Announcement");
 const { DEFAULT_FIRST_PASSWORD, generateTempPassword } = require("../utils/password");
 const { createBulkStudents, ensureUsernameAvailable, generateUniqueUsername } = require("../utils/accounts");
 const { ensureBaseCourses, toSlug } = require("../utils/courses");
+const {
+  backfillClassFeeAccounts,
+  calculateFeeStatus,
+  ensureFeeForStudentId,
+  normalizeFeeStatus: normalizeCentralFeeStatus,
+  recordPayment,
+  serializeFeeAccount,
+  syncStudentFeeFields
+} = require("../utils/feeManager");
 
 const router = express.Router();
 router.use(auth, requireRole("admin"));
 
 const MATERIAL_TYPES = ["pdf", "book", "notes", "video"];
 const LANGUAGES = ["en", "ta", "both"];
+const FIXED_GRADES = Array.from({ length: 12 }, (_, index) => `Grade ${index + 1}`);
 const UPLOAD_DIR = path.join(__dirname, "../../uploads/materials");
 const ALLOWED_MIME_TYPES = new Map([
   ["application/pdf", "pdf"],
@@ -47,10 +57,39 @@ function toArray(value) {
 }
 
 function normalizeFeeStatus(totalFees, paidAmount, dueDate) {
-  const pending = Number(totalFees || 0) - Number(paidAmount || 0);
-  if (pending <= 0) return "paid";
-  if (Number(paidAmount || 0) > 0) return "partial";
-  return dueDate && new Date(dueDate) < new Date() ? "overdue" : "pending";
+  return calculateFeeStatus(totalFees, paidAmount, dueDate);
+}
+
+function feeStatusFromInput(value) {
+  return normalizeCentralFeeStatus(value);
+}
+
+function parseStudentCsv(csvText) {
+  return String(csvText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [fullName, rollNumber, parentName, parentContact, grade, className] = line.split(",").map((part) => safeText(part));
+      return { fullName, rollNumber, parentName, parentContact, grade, className };
+    })
+    .filter((row) => row.fullName.toLowerCase() !== "student name");
+}
+
+function normalizeGrade(value) {
+  const raw = safeText(value);
+  const match = raw.match(/\d+/);
+  if (!match) return "";
+  const gradeNumber = Number(match[0]);
+  if (gradeNumber < 1 || gradeNumber > 12) return "";
+  return `Grade ${gradeNumber}`;
+}
+
+function performanceBand(score) {
+  if (score >= 85) return "Excellent";
+  if (score >= 70) return "Good";
+  if (score >= 50) return "Average";
+  return "Needs Improvement";
 }
 
 function escapeRegex(value) {
@@ -101,9 +140,8 @@ router.get("/filter-options", async (_req, res) => {
     ClassSection.find({}).select("name grade section schoolId subjects codingTracks active").sort({ grade: 1, section: 1 }).lean(),
     Course.find({}).select("name slug trackType difficulty active").sort({ name: 1 }).lean()
   ]);
-  const grades = [...new Set(classes.map((row) => row.grade).filter(Boolean))];
   const subjects = [...new Set(classes.flatMap((row) => row.subjects || []).filter(Boolean))];
-  res.json({ schools, teachers, classes, courses, grades, subjects });
+  res.json({ schools, grades: FIXED_GRADES, gradeNames: FIXED_GRADES, teachers, classes, courses, subjects });
 });
 
 router.get("/username", async (req, res) => {
@@ -132,8 +170,9 @@ router.get("/dashboard", async (req, res) => {
   if (req.query.classSectionId) attendanceFilter.classSectionId = req.query.classSectionId;
   if (req.query.attendanceStatus) attendanceFilter.status = req.query.attendanceStatus;
   Object.assign(attendanceFilter, dateFilter(req.query));
-  const [totalSchools, totalTeachers, totalStudents, activeStudents, totalMaterials, feeAgg, attendanceAgg, quizAgg, codeAgg, recentActivities] = await Promise.all([
+  const [totalSchools, totalClasses, totalTeachers, totalStudents, activeStudents, totalMaterials, feeAgg, attendanceAgg, quizAgg, codeAgg, recentActivities] = await Promise.all([
     School.countDocuments(req.query.schoolId ? { _id: req.query.schoolId, active: true } : { active: true }),
+    ClassSection.countDocuments({ ...classFilter, active: true }),
     User.countDocuments({ ...teacherFilter, active: true }),
     User.countDocuments(studentFilter),
     User.countDocuments({ ...studentFilter, active: true }),
@@ -149,6 +188,7 @@ router.get("/dashboard", async (req, res) => {
 
   res.json({
     totalSchools,
+    totalClasses,
     totalTeachers,
     totalStudents,
     activeStudents,
@@ -262,29 +302,45 @@ router.get("/classes", async (req, res) => {
 });
 
 router.post("/classes", async (req, res) => {
-  const school = await School.findById(req.body.schoolId);
-  if (!school) return res.status(400).json({ message: "Valid school is required" });
-  const grade = safeText(req.body.grade || req.body.name || "Class");
+  const requestedSchoolIds = Array.isArray(req.body.schoolIds) && req.body.schoolIds.length ? req.body.schoolIds : (req.body.schoolId ? [req.body.schoolId] : []);
+  const schoolIds = toArray(requestedSchoolIds);
+  if (!schoolIds.length) return res.status(400).json({ message: "At least one valid school is required" });
+  const primarySchool = await School.findById(schoolIds[0]);
+  if (!primarySchool) return res.status(400).json({ message: "Valid school is required" });
+  const grade = normalizeGrade(req.body.grade);
+  if (!grade) return res.status(400).json({ message: "Grade is required and must be Grade 1 to Grade 12" });
   const section = safeText(req.body.section || "A");
+  if (!section) return res.status(400).json({ message: "Class name is required" });
   const teacherIds = toArray(req.body.teacherIds);
   const classTeacherId = safeText(req.body.classTeacherId) || teacherIds[0];
+  if (!classTeacherId) return res.status(400).json({ message: "Teacher is required" });
+  const duplicate = await ClassSection.exists({ schoolId: primarySchool._id, grade, section });
+  if (duplicate) return res.status(409).json({ message: `${grade} - ${section} already exists for this school` });
+  
   const classSection = await ClassSection.create({
-    schoolId: school._id,
+    schoolId: primarySchool._id,
+    schoolIds,
     grade,
     section,
-    name: safeText(req.body.name || `${grade} - ${section}`),
+    name: `${grade} - ${section}`,
     teacherIds,
     classTeacherId,
     courseIds: toArray(req.body.courseIds),
     subjects: toArray(req.body.subjects),
     schedule: safeText(req.body.schedule),
     codingTracks: toArray(req.body.codingTracks),
-    capacity: Number(req.body.capacity || 30)
+    capacity: Number(req.body.capacity || 30),
+    // Fee Structure
+    feeType: req.body.feeType || "monthly",
+    feeAmount: Number(req.body.feeAmount || 0),
+    currency: safeText(req.body.currency || "INR"),
+    feeDueDay: Number(req.body.feeDueDay || 5)
   });
-  await User.updateMany({ _id: { $in: classSection.teacherIds }, role: "teacher" }, { $addToSet: { classSectionIds: classSection._id }, schoolId: school._id });
+  
+  await User.updateMany({ _id: { $in: classSection.teacherIds }, role: "teacher" }, { $addToSet: { classSectionIds: classSection._id }, schoolId: primarySchool._id });
   const createdStudents = await createBulkStudents({
     students: req.body.students,
-    schoolId: school._id,
+    schoolId: primarySchool._id,
     classSectionId: classSection._id,
     grade,
     courseIds: classSection.courseIds,
@@ -301,23 +357,45 @@ router.put("/classes/:id", async (req, res) => {
   const school = await School.findById(schoolId);
   if (!school) return res.status(400).json({ message: "Valid school is required" });
   const teacherIds = toArray(req.body.teacherIds);
+  const requestedGrade = normalizeGrade(req.body.grade || classSection.grade);
+  if (!requestedGrade) return res.status(400).json({ message: "Grade is required and must be Grade 1 to Grade 12" });
+  const requestedSection = safeText(req.body.section || classSection.section);
+  if (!requestedSection) return res.status(400).json({ message: "Class name is required" });
+  const classTeacherId = safeText(req.body.classTeacherId) || teacherIds[0];
+  if (!classTeacherId) return res.status(400).json({ message: "Teacher is required" });
+  const duplicate = await ClassSection.exists({ _id: { $ne: classSection._id }, schoolId: school._id, grade: requestedGrade, section: requestedSection });
+  if (duplicate) return res.status(409).json({ message: `${requestedGrade} - ${requestedSection} already exists for this school` });
   classSection.schoolId = school._id;
-  classSection.grade = safeText(req.body.grade || classSection.grade);
-  classSection.section = safeText(req.body.section || classSection.section);
-  classSection.name = safeText(req.body.name || `${classSection.grade} - ${classSection.section}`);
+  classSection.grade = requestedGrade;
+  classSection.section = requestedSection;
+  classSection.name = `${classSection.grade} - ${classSection.section}`;
   classSection.teacherIds = teacherIds;
-  classSection.classTeacherId = safeText(req.body.classTeacherId) || teacherIds[0] || undefined;
+  classSection.classTeacherId = classTeacherId;
   classSection.courseIds = toArray(req.body.courseIds);
   classSection.subjects = toArray(req.body.subjects);
   classSection.schedule = safeText(req.body.schedule);
   classSection.codingTracks = toArray(req.body.codingTracks);
   classSection.capacity = Number(req.body.capacity || classSection.capacity || 30);
+  // Fee Structure
+  if (req.body.feeType) classSection.feeType = req.body.feeType;
+  if (req.body.feeAmount !== undefined) classSection.feeAmount = Number(req.body.feeAmount);
+  if (req.body.currency) classSection.currency = safeText(req.body.currency);
+  if (req.body.feeDueDay !== undefined) classSection.feeDueDay = Number(req.body.feeDueDay);
   classSection.active = req.body.active !== false;
   await classSection.save();
-  await User.updateMany({ classSectionIds: classSection._id }, { $pull: { classSectionIds: classSection._id } });
+  await User.updateMany({ role: "teacher", classSectionIds: classSection._id }, { $pull: { classSectionIds: classSection._id } });
   await User.updateMany({ _id: { $in: teacherIds }, role: "teacher" }, { $addToSet: { classSectionIds: classSection._id }, schoolId: school._id });
+  await backfillClassFeeAccounts(classSection._id, req.user.id);
+  const createdStudents = await createBulkStudents({
+    students: req.body.students,
+    schoolId: school._id,
+    classSectionId: classSection._id,
+    grade: classSection.grade,
+    courseIds: classSection.courseIds,
+    createdBy: req.user.id
+  });
   await ActivityLog.create({ userId: req.user.id, action: "class_updated", meta: { classSectionId: classSection._id } });
-  res.json(await classSection.populate("schoolId", "name code"));
+  res.json({ classSection: await classSection.populate("schoolId", "name code"), students: createdStudents });
 });
 
 router.delete("/classes/:id", async (req, res) => {
@@ -365,7 +443,10 @@ router.post("/teachers", async (req, res) => {
     active: req.body.active !== false,
     firstLogin: true
   });
-  await ClassSection.updateMany({ _id: { $in: classSectionIds }, schoolId: school._id }, { $addToSet: { teacherIds: teacher._id } });
+  const teacherSchoolIds = Array.isArray(req.body.schoolIds) && req.body.schoolIds.length ? req.body.schoolIds : [String(school._id)];
+  teacher.schoolIds = teacherSchoolIds;
+  await teacher.save();
+  await ClassSection.updateMany({ _id: { $in: classSectionIds }, schoolId: { $in: teacherSchoolIds } }, { $addToSet: { teacherIds: teacher._id } });
   await ActivityLog.create({ userId: req.user.id, action: "teacher_created", meta: { teacherId: teacher._id, username } });
   res.status(201).json({ id: teacher._id, username: teacher.username, tempPassword });
 });
@@ -373,8 +454,11 @@ router.post("/teachers", async (req, res) => {
 router.put("/teachers/:id", async (req, res) => {
   const teacher = await User.findOne({ _id: req.params.id, role: "teacher" });
   if (!teacher) return res.status(404).json({ message: "Teacher not found" });
-  const school = await School.findById(req.body.schoolId || teacher.schoolId);
-  if (!school) return res.status(400).json({ message: "Valid school is required" });
+  const incomingSchoolIds = toArray(req.body.schoolIds);
+  const schoolIds = incomingSchoolIds.length ? incomingSchoolIds : (Array.isArray(teacher.schoolIds) && teacher.schoolIds.length ? teacher.schoolIds : teacher.schoolId ? [String(teacher.schoolId)] : []);
+  if (!schoolIds.length) return res.status(400).json({ message: "At least one valid school is required" });
+  const primarySchool = await School.findById(schoolIds[0]);
+  if (!primarySchool) return res.status(400).json({ message: "Valid school is required" });
   teacher.fullName = safeText(req.body.fullName);
   teacher.email = safeText(req.body.email);
   teacher.phone = safeText(req.body.phone);
@@ -391,12 +475,13 @@ router.put("/teachers/:id", async (req, res) => {
   } else if (!teacher.permissions || !teacher.permissions.length) {
     teacher.permissions = ["students:view", "students:manage", "classes:manage", "attendance", "materials", "assignments", "coding", "analytics", "messages", "fees:view"];
   }
-  teacher.schoolId = school._id;
+  teacher.schoolIds = schoolIds;
+  teacher.schoolId = primarySchool._id;
   teacher.classSectionIds = toArray(req.body.classSectionIds);
   teacher.active = req.body.active !== false;
   await teacher.save();
   await ClassSection.updateMany({ teacherIds: teacher._id }, { $pull: { teacherIds: teacher._id } });
-  await ClassSection.updateMany({ _id: { $in: teacher.classSectionIds }, schoolId: teacher.schoolId }, { $addToSet: { teacherIds: teacher._id } });
+  await ClassSection.updateMany({ _id: { $in: teacher.classSectionIds }, schoolId: { $in: teacher.schoolIds } }, { $addToSet: { teacherIds: teacher._id } });
   await ActivityLog.create({ userId: req.user.id, action: "teacher_assigned", meta: { teacherId: teacher._id } });
   res.json(await teacher.populate([{ path: "schoolId", select: "name code" }, { path: "classSectionIds", select: "name grade section" }]));
 });
@@ -404,11 +489,17 @@ router.put("/teachers/:id", async (req, res) => {
 router.put("/teachers/:id/assignments", async (req, res) => {
   const teacher = await User.findOne({ _id: req.params.id, role: "teacher" });
   if (!teacher) return res.status(404).json({ message: "Teacher not found" });
-  teacher.schoolId = req.body.schoolId || teacher.schoolId;
+  const incomingSchoolIds2 = toArray(req.body.schoolIds);
+  const schoolIds2 = incomingSchoolIds2.length ? incomingSchoolIds2 : (Array.isArray(teacher.schoolIds) && teacher.schoolIds.length ? teacher.schoolIds : teacher.schoolId ? [String(teacher.schoolId)] : []);
+  if (!schoolIds2.length) return res.status(400).json({ message: "At least one valid school is required" });
+  const primarySchool2 = await School.findById(schoolIds2[0]);
+  if (!primarySchool2) return res.status(400).json({ message: "Valid school is required" });
+  teacher.schoolIds = schoolIds2;
+  teacher.schoolId = primarySchool2._id;
   teacher.classSectionIds = toArray(req.body.classSectionIds);
   await teacher.save();
   await ClassSection.updateMany({ teacherIds: teacher._id }, { $pull: { teacherIds: teacher._id } });
-  await ClassSection.updateMany({ _id: { $in: teacher.classSectionIds }, schoolId: teacher.schoolId }, { $addToSet: { teacherIds: teacher._id } });
+  await ClassSection.updateMany({ _id: { $in: teacher.classSectionIds }, schoolId: { $in: teacher.schoolIds } }, { $addToSet: { teacherIds: teacher._id } });
   await ActivityLog.create({ userId: req.user.id, action: "teacher_assigned", meta: { teacherId: teacher._id } });
   res.json(await teacher.populate([{ path: "schoolId", select: "name code" }, { path: "classSectionIds", select: "name grade section" }]));
 });
@@ -428,7 +519,8 @@ router.get("/fees", async (req, res) => {
   if (req.query.studentId) filter.studentId = req.query.studentId;
   if (req.query.status || req.query.feeStatus) filter.status = req.query.status || req.query.feeStatus;
   Object.assign(filter, dateFilter(req.query, "dueDate"));
-  res.json(await FeeAccount.find(filter).populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("studentId", "username fullName").sort({ dueDate: 1 }).lean());
+  const rows = await FeeAccount.find(filter).populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("studentId", "username fullName rollNumber").sort({ dueDate: 1 }).lean();
+  res.json(rows.map(serializeFeeAccount));
 });
 
 router.post("/fees", async (req, res) => {
@@ -436,21 +528,26 @@ router.post("/fees", async (req, res) => {
   const paidAmount = Number(req.body.paidAmount || 0);
   const status = normalizeFeeStatus(totalFees, paidAmount, req.body.dueDate);
   const fee = await FeeAccount.findOneAndUpdate(
-    { studentId: req.body.studentId, schoolId: req.body.schoolId },
+    { studentId: req.body.studentId },
     {
       schoolId: req.body.schoolId,
       classSectionId: req.body.classSectionId || undefined,
       studentId: req.body.studentId,
+      feeType: req.body.feeType || "custom",
       totalFees,
       paidAmount,
+      currency: safeText(req.body.currency || "INR"),
       dueDate: req.body.dueDate || undefined,
       notes: safeText(req.body.notes),
-      status
+      status,
+      customOverride: true,
+      updatedBy: req.user.id
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
+  await syncStudentFeeFields(fee.studentId, fee);
   await ActivityLog.create({ userId: req.user.id, action: "fee_account_updated", meta: { feeAccountId: fee._id, studentId: fee.studentId } });
-  res.status(201).json(fee);
+  res.status(201).json(serializeFeeAccount(fee));
 });
 
 router.put("/fees/:id", async (req, res) => {
@@ -462,35 +559,41 @@ router.put("/fees/:id", async (req, res) => {
       schoolId: req.body.schoolId,
       classSectionId: req.body.classSectionId || undefined,
       studentId: req.body.studentId,
+      feeType: req.body.feeType || "custom",
       totalFees,
       paidAmount,
+      currency: safeText(req.body.currency || "INR"),
       dueDate: req.body.dueDate || undefined,
       notes: safeText(req.body.notes),
-      status: normalizeFeeStatus(totalFees, paidAmount, req.body.dueDate)
+      status: normalizeFeeStatus(totalFees, paidAmount, req.body.dueDate),
+      customOverride: true,
+      updatedBy: req.user.id
     },
     { new: true }
   );
   if (!fee) return res.status(404).json({ message: "Fee account not found" });
+  await syncStudentFeeFields(fee.studentId, fee);
   await ActivityLog.create({ userId: req.user.id, action: "fee_account_updated", meta: { feeAccountId: fee._id } });
-  res.json(fee);
+  res.json(serializeFeeAccount(fee));
 });
 
 router.post("/fees/:id/payments", async (req, res) => {
-  const fee = await FeeAccount.findById(req.params.id);
-  if (!fee) return res.status(404).json({ message: "Fee account not found" });
-  const amount = Number(req.body.amount || 0);
-  if (amount <= 0) return res.status(400).json({ message: "Payment amount must be greater than zero" });
-  fee.payments.push({
-    amount,
-    method: safeText(req.body.method || "cash"),
-    reference: safeText(req.body.reference),
-    receiptNo: safeText(req.body.receiptNo || `R-${Date.now()}`)
-  });
-  fee.paidAmount = Number(fee.paidAmount || 0) + amount;
-  fee.status = normalizeFeeStatus(fee.totalFees, fee.paidAmount, fee.dueDate);
-  await fee.save();
-  await ActivityLog.create({ userId: req.user.id, action: "fee_payment_recorded", meta: { feeAccountId: fee._id, amount } });
-  res.json(fee);
+  try {
+    const fee = await recordPayment({
+      feeAccountId: req.params.id,
+      amount: req.body.amount,
+      method: safeText(req.body.method || "cash"),
+      reference: safeText(req.body.reference),
+      receiptNo: safeText(req.body.receiptNo || `R-${Date.now()}`),
+      remarks: safeText(req.body.remarks),
+      paymentDate: req.body.paymentDate,
+      updatedBy: req.user.id
+    });
+    await ActivityLog.create({ userId: req.user.id, action: "fee_payment_recorded", meta: { feeAccountId: fee._id, amount: Number(req.body.amount || 0) } });
+    res.json(serializeFeeAccount(fee));
+  } catch (error) {
+    res.status(error.message === "Fee account not found" ? 404 : 400).json({ message: error.message });
+  }
 });
 
 router.delete("/fees/:id", async (req, res) => {
@@ -596,22 +699,109 @@ router.post("/students", async (req, res) => {
     schoolId,
     classSectionIds
   });
+
+  await ensureFeeForStudentId(student._id, req.body.customFeeAmount, req.user.id);
+
   await StudentProgress.create({ userId: student._id, completedLessons: [], quizAttempts: [], codeRunCount: 0 });
   res.status(201).json({ id: student._id, username: student.username, tempPassword });
+});
+
+router.post("/students/bulk-import", async (req, res) => {
+  const inputRows = Array.isArray(req.body.rows) ? req.body.rows : parseStudentCsv(req.body.csvText);
+  const defaultSchoolId = safeText(req.body.schoolId);
+  const defaultClassSectionId = safeText(req.body.classSectionId);
+  const created = [];
+  const failed = [];
+
+  for (let index = 0; index < inputRows.length; index += 1) {
+    const row = inputRows[index] || {};
+    try {
+      const schoolId = safeText(row.schoolId || defaultSchoolId);
+      if (!schoolId) throw new Error("School is required");
+      const school = await School.findOne({ _id: schoolId, active: true });
+      if (!school) throw new Error("Valid active school is required");
+
+      const grade = safeText(row.grade);
+      let classSectionId = safeText(row.classSectionId || defaultClassSectionId);
+      if (!classSectionId && safeText(row.className)) {
+        const className = safeText(row.className);
+        const section = safeText(row.section || className);
+        const classSection = await ClassSection.findOne({
+          schoolId,
+          ...(grade ? { grade } : {}),
+          $or: [{ name: className }, { section }]
+        });
+        classSectionId = classSection?._id ? String(classSection._id) : "";
+      }
+      if (!classSectionId) throw new Error("Class is required");
+      const classSection = await ClassSection.findOne({ _id: classSectionId, schoolId });
+      if (!classSection) throw new Error("Valid class is required");
+
+      const result = await createBulkStudents({
+        students: [{ ...row, grade: grade || classSection.grade }],
+        schoolId,
+        classSectionId,
+        grade: grade || classSection.grade,
+        courseIds: classSection.courseIds,
+        createdBy: req.user.id
+      });
+      created.push(...result);
+    } catch (error) {
+      failed.push({ row: index + 1, message: error.message, data: row });
+    }
+  }
+
+  await ActivityLog.create({ userId: req.user.id, action: "students_bulk_imported", meta: { imported: created.length, failed: failed.length } });
+  res.status(201).json({ rowsImported: created.length, rowsFailed: failed.length, created, failed });
 });
 
 router.get("/students", async (_req, res) => {
   await ensureBaseCourses();
   const students = await User.find(commonFilters(_req.query, { role: "student" }))
-    .select("username fullName email phone studentId rollNumber parentName parentContact grade feeStructure profilePhotoUrl active createdAt assignedCourses schoolId classSectionIds")
+    .select("username fullName email phone studentId rollNumber parentName parentContact grade feeStructure profilePhotoUrl active createdAt assignedCourses schoolId classSectionIds feeAmount paidAmount pendingAmount feeStatus lastPaymentDate")
     .populate("assignedCourses", "name slug active")
     .populate("schoolId", "name code")
     .populate("classSectionIds", "name grade section")
     .lean();
-  const progress = await StudentProgress.find({ userId: { $in: students.map((s) => s._id) } }).lean();
+  const studentIds = students.map((s) => s._id);
+  const [progress, fees, attendanceAgg] = await Promise.all([
+    StudentProgress.find({ userId: { $in: studentIds } }).lean(),
+    FeeAccount.find({ studentId: { $in: studentIds } }).lean(),
+    Attendance.aggregate([
+      { $match: { studentId: { $in: studentIds } } },
+      { $group: { _id: { studentId: "$studentId", status: "$status" }, count: { $sum: 1 } } }
+    ])
+  ]);
   const map = new Map(progress.map((p) => [String(p.userId), p]));
+  const feeMap = new Map(fees.map((fee) => [String(fee.studentId), fee]));
+  const attendanceMap = new Map();
+  attendanceAgg.forEach((row) => {
+    const id = String(row._id.studentId);
+    const current = attendanceMap.get(id) || { total: 0, present: 0 };
+    current.total += row.count;
+    if (["present", "late"].includes(row._id.status)) current.present += row.count;
+    attendanceMap.set(id, current);
+  });
 
-  res.json(students.map((s) => ({ ...s, progress: map.get(String(s._id)) || { completedLessons: [], quizAttempts: [], codeRunCount: 0 } })));
+  res.json(students.map((s) => {
+    const progressRecord = map.get(String(s._id)) || { completedLessons: [], quizAttempts: [], codeRunCount: 0 };
+    const attendanceRecord = attendanceMap.get(String(s._id)) || { total: 0, present: 0 };
+    const attendancePercentage = attendanceRecord.total ? Math.round((attendanceRecord.present / attendanceRecord.total) * 100) : Number(progressRecord.attendancePercentage || 0);
+    const avgAssessment = progressRecord.quizAttempts?.length
+      ? Math.round(progressRecord.quizAttempts.reduce((sum, item) => sum + Number(item.bestScore || 0), 0) / progressRecord.quizAttempts.length)
+      : 0;
+    const assignmentCompletion = progressRecord.completedLessons?.length ? Math.min(100, progressRecord.completedLessons.length * 10) : 0;
+    const codingActivity = Math.min(100, Number(progressRecord.codeRunCount || 0) * 5);
+    const performanceScore = Math.round((attendancePercentage * 0.3) + (avgAssessment * 0.35) + (assignmentCompletion * 0.2) + (codingActivity * 0.15));
+    return {
+      ...s,
+      progress: progressRecord,
+      attendancePercentage,
+      feeAccount: feeMap.get(String(s._id)) || null,
+      performanceScore,
+      performanceLabel: performanceBand(performanceScore)
+    };
+  }));
 });
 
 router.put("/students/:id", async (req, res) => {
@@ -639,13 +829,73 @@ router.put("/students/:id", async (req, res) => {
   };
   if (assignedCourses.length) patch.assignedCourses = assignedCourses;
   const student = await User.findOneAndUpdate({ _id: req.params.id, role: "student" }, patch, { new: true })
-    .select("username fullName email active assignedCourses schoolId classSectionIds")
+    .select("username fullName email active assignedCourses schoolId classSectionIds feeAmount paidAmount pendingAmount feeStatus lastPaymentDate")
     .populate("assignedCourses", "name slug active")
     .populate("schoolId", "name code")
     .populate("classSectionIds", "name grade section");
   if (!student) return res.status(404).json({ message: "Student not found" });
+
+  await ensureFeeForStudentId(student._id, req.body.customFeeAmount, req.user.id);
+
   await ActivityLog.create({ userId: req.user.id, action: "student_updated", meta: { studentId: student._id } });
   res.json(student);
+});
+
+router.put("/students/:id/transfer", async (req, res) => {
+  const student = await User.findOne({ _id: req.params.id, role: "student" });
+  if (!student) return res.status(404).json({ message: "Student not found" });
+  const schoolId = safeText(req.body.schoolId || student.schoolId);
+  const classSectionIds = toArray(req.body.classSectionIds);
+  if (!schoolId) return res.status(400).json({ message: "School is required" });
+  const school = await School.findOne({ _id: schoolId, active: true });
+  if (!school) return res.status(400).json({ message: "Valid active school is required" });
+  const classes = await ClassSection.find({ _id: { $in: classSectionIds }, schoolId });
+  if (classes.length !== classSectionIds.length) return res.status(400).json({ message: "One or more classes are invalid" });
+  student.schoolId = school._id;
+  student.classSectionIds = classSectionIds;
+  student.grade = safeText(req.body.grade || classes[0]?.grade || student.grade);
+  await student.save();
+  await ensureFeeForStudentId(student._id, req.body.customFeeAmount, req.user.id);
+  await ActivityLog.create({ userId: req.user.id, action: "student_transferred", meta: { studentId: student._id, schoolId, classSectionIds } });
+  res.json(await student.populate([{ path: "schoolId", select: "name code" }, { path: "classSectionIds", select: "name grade section" }]));
+});
+
+router.put("/students/:id/fees", async (req, res) => {
+  const student = await User.findOne({ _id: req.params.id, role: "student" });
+  if (!student) return res.status(404).json({ message: "Student not found" });
+  const status = feeStatusFromInput(req.body.status || req.body.feeStatus);
+  if (!status) return res.status(400).json({ message: "Valid fee status is required" });
+  const totalFees = Number(req.body.totalFees || 0);
+  const paidAmount = Number(req.body.paidAmount || 0);
+  const fee = await FeeAccount.findOneAndUpdate(
+    { studentId: student._id },
+    {
+      schoolId: req.body.schoolId || student.schoolId,
+      classSectionId: req.body.classSectionId || student.classSectionIds?.[0],
+      studentId: student._id,
+      totalFees,
+      paidAmount,
+      dueDate: req.body.dueDate || undefined,
+      status,
+      customOverride: true,
+      updatedBy: req.user.id
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  if (req.body.amountPaid) {
+    await recordPayment({
+      feeAccountId: fee._id,
+      amount: Number(req.body.amountPaid || 0),
+      paymentDate: req.body.paymentDate,
+      reference: safeText(req.body.receiptNumber),
+      receiptNo: safeText(req.body.receiptNumber),
+      updatedBy: req.user.id
+    });
+  } else {
+    await syncStudentFeeFields(student._id, fee);
+  }
+  await ActivityLog.create({ userId: req.user.id, action: "student_fee_status_updated", meta: { studentId: student._id, status } });
+  res.json(serializeFeeAccount(await FeeAccount.findById(fee._id)));
 });
 
 router.put("/students/:id/courses", async (req, res) => {

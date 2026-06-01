@@ -22,9 +22,17 @@ export default function TeacherCurriculumPage() {
   const [deletingLesson, setDeletingLesson] = useState<Lesson | null>(null);
   const [form, setForm] = useState({
     title: "",
+    description: "",
     content: "",
     courseId: "",
-    objectives: ""
+    module: "",
+    chapter: "",
+    objectives: "",
+    duration: 30,
+    difficulty: "medium",
+    visibility: "teachers",
+    gradeLevels: "",
+    isPublished: false
   });
   const { toast } = useToast();
 
@@ -62,15 +70,37 @@ export default function TeacherCurriculumPage() {
       await CurriculumService.createLesson(
         {
           title: form.title,
+          description: form.description,
           content: form.content,
           courseId: form.courseId,
-          objectives: form.objectives ? form.objectives.split("\n").filter((o) => o.trim()) : []
+          module: form.module,
+          chapter: form.chapter,
+          objectives: form.objectives ? form.objectives.split("\n").filter((o) => o.trim()) : [],
+          duration: form.duration,
+          difficulty: form.difficulty,
+          visibility: form.visibility,
+          gradeLevels: form.gradeLevels ? form.gradeLevels.split(",").map((g) => g.trim()).filter(Boolean) : [],
+          status: form.isPublished ? "published" : "draft",
+          isPublished: form.isPublished
         },
         token,
         "teacher"
       );
       toast({ title: "Success", description: "Lesson created successfully" });
-      setForm({ title: "", content: "", courseId: form.courseId, objectives: "" });
+      setForm({
+        title: "",
+        description: "",
+        content: "",
+        courseId: form.courseId,
+        module: "",
+        chapter: "",
+        objectives: "",
+        duration: 30,
+        difficulty: "medium",
+        visibility: "teachers",
+        gradeLevels: "",
+        isPublished: false
+      });
       loadData();
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Failed to create lesson", variant: "destructive" });
@@ -120,6 +150,11 @@ export default function TeacherCurriculumPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Lesson title" />
+            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Brief description" />
+            <div className="grid gap-2 md:grid-cols-2">
+              <Input value={form.module} onChange={(e) => setForm({ ...form, module: e.target.value })} placeholder="Module name" />
+              <Input value={form.chapter} onChange={(e) => setForm({ ...form, chapter: e.target.value })} placeholder="Chapter name" />
+            </div>
             <textarea
               value={form.content}
               onChange={(e) => setForm({ ...form, content: e.target.value })}
@@ -132,14 +167,59 @@ export default function TeacherCurriculumPage() {
               placeholder="Learning objectives (one per line)"
               className="h-20 rounded-md border bg-background px-3 py-2 text-sm resize-none"
             />
-            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.courseId} onChange={(e) => setForm({ ...form, courseId: e.target.value })}>
-              <option value="">Select a course</option>
-              {courses.filter((course) => course.active).map((course) => (
-                <option key={course._id} value={course._id}>
-                  {course.name}
-                </option>
-              ))}
-            </select>
+            <div className="grid gap-2 md:grid-cols-2">
+              <Input
+                type="number"
+                value={form.duration}
+                onChange={(e) => setForm({ ...form, duration: Number(e.target.value) })}
+                placeholder="Duration (minutes)"
+                min={1}
+              />
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={form.difficulty}
+                onChange={(e) => setForm({ ...form, difficulty: e.target.value })}
+              >
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={form.visibility}
+                onChange={(e) => setForm({ ...form, visibility: e.target.value })}
+              >
+                <option value="teachers">Teachers only</option>
+                <option value="students">Students</option>
+                <option value="public">Public</option>
+              </select>
+              <Input
+                value={form.gradeLevels}
+                onChange={(e) => setForm({ ...form, gradeLevels: e.target.value })}
+                placeholder="Grade levels (comma separated)"
+              />
+            </div>
+            <div className="grid gap-2 md:grid-cols-[1fr_auto] items-center">
+              <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.courseId} onChange={(e) => setForm({ ...form, courseId: e.target.value })}>
+                <option value="">Select a course</option>
+                {courses.filter((course) => course.active).map((course) => (
+                  <option key={course._id} value={course._id}>
+                    {course.name}
+                  </option>
+                ))}
+              </select>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.isPublished}
+                  onChange={(e) => setForm({ ...form, isPublished: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                />
+                Publish now
+              </label>
+            </div>
             <Button className="w-full" onClick={createLesson} disabled={loading || !form.title.trim() || !form.courseId}>
               <BookMarked className="h-4 w-4 mr-2" />
               Create Lesson

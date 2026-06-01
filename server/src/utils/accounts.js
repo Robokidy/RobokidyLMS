@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const StudentProgress = require("../models/StudentProgress");
+const ClassSection = require("../models/ClassSection");
 const { DEFAULT_FIRST_PASSWORD } = require("./password");
+const { ensureStudentFeeAccount } = require("./feeManager");
 
 function safeText(value) {
   return String(value || "").trim();
@@ -38,6 +40,7 @@ async function ensureUsernameAvailable(username) {
 async function createBulkStudents({ students, schoolId, classSectionId, grade, courseIds, trackIds, createdBy }) {
   const reserved = new Set();
   const rows = Array.isArray(students) ? students : [];
+  const classSection = classSectionId ? await ClassSection.findById(classSectionId) : null;
   const created = [];
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index] || {};
@@ -73,6 +76,12 @@ async function createBulkStudents({ students, schoolId, classSectionId, grade, c
       active: row.active !== false
     });
     await StudentProgress.create({ userId: student._id, completedLessons: [], quizAttempts: [], codeRunCount: 0 });
+    await ensureStudentFeeAccount({
+      student,
+      classSection,
+      customFeeAmount: row.customFeeAmount,
+      updatedBy: createdBy
+    });
     created.push({ id: student._id, username: student.username, tempPassword: DEFAULT_FIRST_PASSWORD, createdBy });
   }
   return created;

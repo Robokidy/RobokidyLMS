@@ -20,6 +20,9 @@ function getUserScope(user) {
     role: user.role,
     schoolId: user.schoolId,
     classSectionIds: user.classSectionIds ? user.classSectionIds.map(id => String(id)) : [],
+    grade: user.grade || "",
+    assignedCourses: user.assignedCourses ? user.assignedCourses.map(id => String(id)) : [],
+    assignedTrackIds: user.assignedTrackIds ? user.assignedTrackIds.map(id => String(id)) : [],
     permissions: user.permissions || []
   };
   return scope;
@@ -37,20 +40,25 @@ function buildAccessFilter(scope, baseFilter = {}) {
   }
 
   if (scope.role === "teacher") {
-    // Teachers see content in their school and assigned classes
+    // Teachers see content in their school and assigned classes or courses
     filter.schoolId = scope.schoolId;
     filter.$or = [
       { classSectionIds: { $in: scope.classSectionIds } },
-      { classSectionIds: { $size: 0 } }, // School-level content
-      { createdBy: scope.userId } // Their own content
+      { courseId: { $in: scope.assignedCourses } },
+      { createdBy: scope.userId }
     ];
     return filter;
   }
 
   if (scope.role === "student") {
-    // Students see published content assigned to their class
+    // Students see published content assigned to their class, grade, or course enrollment
     filter.isPublished = true;
-    filter.classSectionIds = scope.classSectionIds.length > 0 ? { $in: scope.classSectionIds } : { $size: 0 };
+    filter.visibility = { $in: ["students", "public"] };
+    filter.$or = [
+      { classSectionIds: { $in: scope.classSectionIds } },
+      { gradeLevels: scope.grade ? { $in: [scope.grade] } : [] },
+      { courseId: { $in: scope.assignedCourses } }
+    ];
     return filter;
   }
 
@@ -77,11 +85,17 @@ function canModify(scope, createdById) {
 router.get("/lessons", async (req, res) => {
   try {
     const scope = getUserScope(req.authUser || req.user);
-    const { courseId, search, page = 1, limit = 20, status } = req.query;
+    const { courseId, classSectionId, grade, difficulty, module, chapter, visibility, search, page = 1, limit = 20, status } = req.query;
 
     let filter = buildAccessFilter(scope);
 
     if (courseId) filter.courseId = courseId;
+    if (classSectionId) filter.classSectionIds = { $in: [classSectionId] };
+    if (grade) filter.gradeLevels = { $in: [grade] };
+    if (difficulty) filter.difficulty = difficulty;
+    if (module) filter.module = module;
+    if (chapter) filter.chapter = chapter;
+    if (visibility && (scope.role === "admin" || scope.role === "teacher")) filter.visibility = visibility;
     if (status && (scope.role === "admin" || scope.role === "teacher")) {
       filter.status = status;
     } else {
@@ -171,6 +185,8 @@ router.post("/lessons", async (req, res) => {
       content,
       contentMarkdown,
       courseId,
+      module,
+      chapter,
       courseTrackId,
       objectives,
       keyPoints,
@@ -178,17 +194,31 @@ router.post("/lessons", async (req, res) => {
       difficulty,
       tags,
       visibility,
-      classSectionIds
+      gradeLevels,
+      classSectionIds,
+      unlockType,
+      unlockDate,
+      unlockAfterLessonIds,
+      unlockAfterAssessmentId,
+      unlockRequiresApproval,
+      thumbnailUrl,
+      bannerUrl,
+      coverUrl,
+      contentBlocks,
+      attachments,
+      prerequisites,
+      status,
+      isPublished
     } = req.body;
 
     if (!title || !content || !courseId) {
       return res.status(400).json({ message: "Title, content, and courseId are required" });
     }
 
-    // Teachers can only create in their school
+    // Teachers can only create in their school and assigned classes
     const finalSchoolId = scope.role === "admin" ? req.body.schoolId : scope.schoolId;
-    const finalClassSectionIds = scope.role === "admin" 
-      ? (classSectionIds || []) 
+    const finalClassSectionIds = scope.role === "admin"
+      ? (classSectionIds || [])
       : classSectionIds ? classSectionIds.filter(id => scope.classSectionIds.includes(String(id))) : [];
 
     const lesson = new Lesson({
@@ -197,6 +227,8 @@ router.post("/lessons", async (req, res) => {
       content,
       contentMarkdown,
       courseId,
+      module,
+      chapter,
       courseTrackId,
       objectives: objectives || [],
       keyPoints: keyPoints || [],
@@ -204,9 +236,22 @@ router.post("/lessons", async (req, res) => {
       difficulty,
       tags: tags || [],
       visibility: visibility || "teachers",
-      schoolId: finalSchoolId,
+      gradeLevels: gradeLevels || [],
       classSectionIds: finalClassSectionIds,
-      status: "draft",
+      unlockType: unlockType || "immediate",
+      unlockDate,
+      unlockAfterLessonIds: unlockAfterLessonIds || [],
+      unlockAfterAssessmentId,
+      unlockRequiresApproval: unlockRequiresApproval || false,
+      thumbnailUrl: thumbnailUrl || "",
+      bannerUrl: bannerUrl || "",
+      coverUrl: coverUrl || "",
+      contentBlocks: contentBlocks || [],
+      attachments: attachments || [],
+      prerequisites: prerequisites || [],
+      status: status || "draft",
+      isPublished: isPublished || false,
+      schoolId: finalSchoolId,
       createdBy: scope.userId
     });
 
@@ -243,6 +288,8 @@ router.put("/lessons/:id", async (req, res) => {
       content,
       contentMarkdown,
       courseId,
+      module,
+      chapter,
       courseTrackId,
       objectives,
       keyPoints,
@@ -250,7 +297,19 @@ router.put("/lessons/:id", async (req, res) => {
       difficulty,
       tags,
       visibility,
+      gradeLevels,
       classSectionIds,
+      unlockType,
+      unlockDate,
+      unlockAfterLessonIds,
+      unlockAfterAssessmentId,
+      unlockRequiresApproval,
+      thumbnailUrl,
+      bannerUrl,
+      coverUrl,
+      contentBlocks,
+      attachments,
+      prerequisites,
       status,
       isPublished
     } = req.body;
@@ -260,14 +319,28 @@ router.put("/lessons/:id", async (req, res) => {
     if (content) lesson.content = content;
     if (contentMarkdown) lesson.contentMarkdown = contentMarkdown;
     if (courseId) lesson.courseId = courseId;
+    if (module !== undefined) lesson.module = module;
+    if (chapter !== undefined) lesson.chapter = chapter;
     if (courseTrackId) lesson.courseTrackId = courseTrackId;
     if (objectives) lesson.objectives = objectives;
     if (keyPoints) lesson.keyPoints = keyPoints;
-    if (duration) lesson.duration = duration;
+    if (duration !== undefined) lesson.duration = duration;
     if (difficulty) lesson.difficulty = difficulty;
     if (tags) lesson.tags = tags;
     if (visibility) lesson.visibility = visibility;
+    if (gradeLevels) lesson.gradeLevels = gradeLevels;
     if (classSectionIds) lesson.classSectionIds = classSectionIds;
+    if (unlockType) lesson.unlockType = unlockType;
+    if (unlockDate !== undefined) lesson.unlockDate = unlockDate;
+    if (unlockAfterLessonIds) lesson.unlockAfterLessonIds = unlockAfterLessonIds;
+    if (unlockAfterAssessmentId) lesson.unlockAfterAssessmentId = unlockAfterAssessmentId;
+    if (unlockRequiresApproval !== undefined) lesson.unlockRequiresApproval = unlockRequiresApproval;
+    if (thumbnailUrl !== undefined) lesson.thumbnailUrl = thumbnailUrl;
+    if (bannerUrl !== undefined) lesson.bannerUrl = bannerUrl;
+    if (coverUrl !== undefined) lesson.coverUrl = coverUrl;
+    if (contentBlocks) lesson.contentBlocks = contentBlocks;
+    if (attachments) lesson.attachments = attachments;
+    if (prerequisites) lesson.prerequisites = prerequisites;
     if (status) lesson.status = status;
     if (isPublished !== undefined) {
       lesson.isPublished = isPublished;

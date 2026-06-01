@@ -53,6 +53,7 @@ const reportRoutes = optionalRoute("./routes/reportRoutes");
 const teacherReportsRoutes = optionalRoute("./routes/teacherReportsRoutes");
 const adminAnalyticsRoutes = optionalRoute("./routes/adminAnalyticsRoutes");
 const codingSubmissionRoutes = optionalRoute("./routes/codingSubmissionRoutes");
+const feeRoutes = optionalRoute("./routes/feeRoutes");
 
 const app = express();
 const configuredOrigins = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "")
@@ -98,6 +99,7 @@ app.use("/api/course-tracks", courseTrackRoutes);
 app.use("/api/code", codeRoutes);
 app.use("/api/content", contentRoutes);
 app.use("/api/assessments", assessmentRoutes);
+if (feeRoutes) app.use("/api/fees", feeRoutes);
 if (examRoutes) app.use("/api/exams", examRoutes);
 if (testRoutes) app.use("/api/tests", testRoutes);
 if (teacherReportsRoutes) app.use("/api/tests", teacherReportsRoutes);

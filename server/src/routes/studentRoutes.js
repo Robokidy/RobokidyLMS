@@ -9,6 +9,8 @@ const Quiz = require("../models/Quiz");
 const StudentProgress = require("../models/StudentProgress");
 const ActivityLog = require("../models/ActivityLog");
 const { ensureBaseCourses } = require("../utils/courses");
+const FeeAccount = require("../models/FeeAccount");
+const { ensureFeeForStudentId, serializeFeeAccount } = require("../utils/feeManager");
 
 const router = express.Router();
 router.use(auth, requireRole("student"));
@@ -62,15 +64,17 @@ async function canAccessLesson(userId, lessonId) {
 router.get("/dashboard", async (req, res) => {
   await ensureBaseCourses();
   const assignedCourses = await getAssignedCourseIds(req.user.id);
-  const [totalLessons, progress, attempts] = await Promise.all([
+  const [totalLessons, progress, attempts, feeAccount] = await Promise.all([
     assignedCourses.length ? Lesson.countDocuments({ courseId: { $in: assignedCourses } }) : 0,
     StudentProgress.findOne({ userId: req.user.id }),
     StudentProgress.aggregate([
       { $match: { userId: req.user.id } },
       { $unwind: { path: "$quizAttempts", preserveNullAndEmptyArrays: true } },
       { $group: { _id: null, total: { $sum: "$quizAttempts.attempts" } } }
-    ])
+    ]),
+    FeeAccount.findOne({ studentId: req.user.id }).lean()
   ]);
+  const fee = feeAccount || await ensureFeeForStudentId(req.user.id);
 
   const hasPythonAccess = await hasPythonCourse(req.user.id);
   const studentAccess = await getStudentAccess(req.user.id);
@@ -85,6 +89,7 @@ router.get("/dashboard", async (req, res) => {
     hasPythonAccess,
     assignedTracks: studentAccess.assignedTracks,
     assignedCourses: studentAccess.assignedCourses,
+    feeAccount: serializeFeeAccount(fee),
     enabledModules,
     allowedRoutes
   });

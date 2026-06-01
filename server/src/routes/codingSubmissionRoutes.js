@@ -3,7 +3,6 @@ const router = express.Router();
 const CodingSubmission = require("../models/CodingSubmission");
 const TestAttempt = require("../models/TestAttempt");
 const Question = require("../models/Question");
-const axios = require("axios");
 const { auth } = require("../middleware/auth");
 
 // ==================== CODING SUBMISSION HANDLING ====================

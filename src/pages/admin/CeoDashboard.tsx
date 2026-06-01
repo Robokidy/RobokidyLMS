@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, ArrowUpRight, Building2, CalendarCheck, CreditCard, Download, FileText, GraduationCap, Plus, ShieldCheck, Users } from "lucide-react";
+import { Activity, ArrowUpRight, Building2, CalendarCheck, CreditCard, FileText, GraduationCap, Plus, ShieldCheck, Users } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiFetch } from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
@@ -10,13 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const kpis = [
   { key: "totalSchools", label: "Total Schools", icon: Building2, trend: "+8.4%" },
+  { key: "totalClasses", label: "Classes", icon: FileText, trend: "+7.2%" },
   { key: "totalTeachers", label: "Total Teachers", icon: ShieldCheck, trend: "+12.1%" },
   { key: "totalStudents", label: "Total Students", icon: Users, trend: "+18.7%" },
   { key: "activeStudents", label: "Active Students", icon: GraduationCap, trend: "+9.2%" },
   { key: "pendingFees", label: "Revenue", icon: CreditCard, trend: "+6.8%", money: true },
   { key: "attendancePercentage", label: "Attendance %", icon: CalendarCheck, trend: "+3.4%", percent: true },
-  { key: "totalQuizAttempts", label: "Assessment Attempts", icon: Activity, trend: "+22.0%" },
-  { key: "totalCodeRuns", label: "Material Downloads", icon: Download, trend: "+15.5%" }
+  { key: "totalQuizAttempts", label: "Assessment Attempts", icon: Activity, trend: "+22.0%" }
 ];
 
 function displayValue(stats: any, card: any) {

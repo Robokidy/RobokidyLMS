@@ -14,6 +14,7 @@ const StudentProgress = require("../models/StudentProgress");
 const ActivityLog = require("../models/ActivityLog");
 const Announcement = require("../models/Announcement");
 const { DEFAULT_FIRST_PASSWORD, createBulkStudents, ensureUsernameAvailable, generateUniqueUsername } = require("../utils/accounts");
+const { ensureFeeForStudentId, serializeFeeAccount } = require("../utils/feeManager");
 
 const router = express.Router();
 router.use(auth, loadUser, requireRole("teacher"));
@@ -47,6 +48,7 @@ function teacherContentFilter(scope, query = {}) {
   const or = [];
   if (scope.courseIds.length) or.push({ courseId: { $in: scope.courseIds } });
   if (scope.courseTrackIds.length) or.push({ courseTrackId: { $in: scope.courseTrackIds } });
+  if (scope.classSectionIds.length) or.push({ classSectionIds: { $in: scope.classSectionIds } });
 
   const filter = {};
   if (or.length === 1) Object.assign(filter, or[0]);
@@ -55,6 +57,13 @@ function teacherContentFilter(scope, query = {}) {
 
   if (query.courseId && scope.courseIds.includes(String(query.courseId))) filter.courseId = query.courseId;
   if (query.courseTrackId && scope.courseTrackIds.includes(String(query.courseTrackId))) filter.courseTrackId = query.courseTrackId;
+  if (query.classSectionId && scope.classSectionIds.includes(String(query.classSectionId))) filter.classSectionIds = { $in: [query.classSectionId] };
+  if (query.grade) filter.gradeLevels = { $in: [query.grade] };
+  if (query.difficulty) filter.difficulty = query.difficulty;
+  if (query.module) filter.module = query.module;
+  if (query.chapter) filter.chapter = query.chapter;
+  if (query.status) filter.status = query.status;
+  if (query.search) filter.$text = { $search: query.search };
   return filter;
 }
 
@@ -195,14 +204,18 @@ router.post("/classes", requirePermission("classes:manage"), async (req, res) =>
 router.get("/students", requirePermission("students:view", "students:manage"), async (req, res) => {
   const scope = teacherScope(req);
   const students = await User.find(scopedQuery(req, { role: "student" }))
-    .select("username fullName email phone studentId rollNumber parentName parentContact grade feeStructure profilePhotoUrl active assignedCourses assignedTrackIds classSectionIds schoolId")
+    .select("username fullName email phone studentId rollNumber parentName parentContact grade feeStructure profilePhotoUrl active assignedCourses assignedTrackIds classSectionIds schoolId feeAmount paidAmount pendingAmount feeStatus lastPaymentDate")
     .populate("classSectionIds", "name grade section")
     .populate("assignedCourses", "name slug")
     .populate("assignedTrackIds", "trackName trackCode category grade")
     .lean();
-  const progress = await StudentProgress.find({ userId: { $in: students.map((student) => student._id) } }).lean();
+  const [progress, fees] = await Promise.all([
+    StudentProgress.find({ userId: { $in: students.map((student) => student._id) } }).lean(),
+    FeeAccount.find({ studentId: { $in: students.map((student) => student._id) } }).lean()
+  ]);
   const progressMap = new Map(progress.map((row) => [String(row.userId), row]));
-  res.json(students.map((student) => ({ ...student, progress: progressMap.get(String(student._id)) || null })));
+  const feeMap = new Map(fees.map((fee) => [String(fee.studentId), serializeFeeAccount(fee)]));
+  res.json(students.map((student) => ({ ...student, progress: progressMap.get(String(student._id)) || null, feeAccount: feeMap.get(String(student._id)) || null })));
 });
 
 router.get("/classes/:classId/students", requirePermission("students:view", "students:manage", "attendance"), async (req, res) => {
@@ -271,6 +284,7 @@ router.post("/students", requirePermission("students:manage"), async (req, res) 
   });
   await Promise.all([
     StudentProgress.create({ userId: student._id, completedLessons: [], quizAttempts: [], codeRunCount: 0 }),
+    ensureFeeForStudentId(student._id, req.body.customFeeAmount, req.user.id),
     ActivityLog.create({ userId: req.user.id, action: "teacher_student_created", meta: { studentId: student._id, username } })
   ]);
   res.status(201).json({ id: student._id, username: student.username, tempPassword });
@@ -306,6 +320,7 @@ router.put("/students/:id", requirePermission("students:manage"), async (req, re
   student.assignedTrackIds = assignedTrackIds.length ? assignedTrackIds : student.assignedTrackIds;
   student.active = req.body.active !== false;
   await student.save();
+  await ensureFeeForStudentId(student._id, req.body.customFeeAmount, req.user.id);
   await ActivityLog.create({ userId: req.user.id, action: "teacher_student_updated", meta: { studentId: student._id } });
   res.json(await student.populate([{ path: "classSectionIds", select: "name grade section" }, { path: "assignedCourses", select: "name slug" }, { path: "assignedTrackIds", select: "trackName trackCode category grade" }]));
 });
@@ -397,7 +412,8 @@ router.get("/fees", requirePermission("fees:view", "students:manage"), async (re
   const filter = { schoolId: scope.schoolId, classSectionId: { $in: scope.classSectionIds } };
   if (req.query.classSectionId && scope.classSectionIds.includes(String(req.query.classSectionId))) filter.classSectionId = req.query.classSectionId;
   if (req.query.status) filter.status = req.query.status;
-  res.json(await FeeAccount.find(filter).populate("studentId", "username fullName").populate("classSectionId", "name grade section").sort({ dueDate: 1 }).lean());
+  const rows = await FeeAccount.find(filter).populate("studentId", "username fullName rollNumber").populate("classSectionId", "name grade section").sort({ dueDate: 1 }).lean();
+  res.json(rows.map(serializeFeeAccount));
 });
 
 router.get("/materials", requirePermission("materials"), async (req, res) => {
@@ -562,12 +578,41 @@ router.post("/lessons", requirePermission("coding", "materials"), async (req, re
       return res.status(403).json({ message: "You cannot create lessons for this course" });
     }
 
+    const classSectionIds = Array.isArray(req.body.classSectionIds)
+      ? req.body.classSectionIds.filter((id) => scope.classSectionIds.includes(String(id)))
+      : [];
+
     const lesson = await Lesson.create({
       title: req.body.title,
+      description: req.body.description || "",
       content: req.body.content || "",
+      contentMarkdown: req.body.contentMarkdown || "",
       courseId: req.body.courseId,
+      module: req.body.module || "",
+      chapter: req.body.chapter || "",
+      courseTrackId: req.body.courseTrackId || null,
       objectives: req.body.objectives || [],
+      keyPoints: req.body.keyPoints || [],
       duration: req.body.duration || 30,
+      difficulty: req.body.difficulty || "medium",
+      tags: req.body.tags || [],
+      visibility: req.body.visibility || "course",
+      gradeLevels: req.body.gradeLevels || [],
+      classSectionIds,
+      unlockType: req.body.unlockType || "manual",
+      unlockDate: req.body.unlockDate || null,
+      unlockAfterLessonIds: req.body.unlockAfterLessonIds || [],
+      unlockAfterAssessmentId: req.body.unlockAfterAssessmentId || null,
+      unlockRequiresApproval: req.body.unlockRequiresApproval || false,
+      thumbnailUrl: req.body.thumbnailUrl || "",
+      bannerUrl: req.body.bannerUrl || "",
+      coverUrl: req.body.coverUrl || "",
+      contentBlocks: req.body.contentBlocks || [],
+      attachments: req.body.attachments || [],
+      prerequisites: req.body.prerequisites || [],
+      status: req.body.status || "draft",
+      isPublished: req.body.isPublished || false,
+      publishedDate: req.body.isPublished ? new Date() : null,
       schoolId: scope.schoolId,
       createdBy: req.user.id
     });
@@ -597,9 +642,39 @@ router.put("/lessons/:id", requirePermission("coding", "materials"), async (req,
     }
 
     if (req.body.title) lesson.title = req.body.title;
+    if (req.body.description !== undefined) lesson.description = req.body.description;
     if (req.body.content !== undefined) lesson.content = req.body.content;
+    if (req.body.contentMarkdown !== undefined) lesson.contentMarkdown = req.body.contentMarkdown;
+    if (req.body.courseId && courseIds.includes(String(req.body.courseId))) lesson.courseId = req.body.courseId;
+    if (req.body.module !== undefined) lesson.module = req.body.module;
+    if (req.body.chapter !== undefined) lesson.chapter = req.body.chapter;
+    if (req.body.courseTrackId !== undefined) lesson.courseTrackId = req.body.courseTrackId;
     if (req.body.objectives) lesson.objectives = req.body.objectives;
-    if (req.body.duration) lesson.duration = req.body.duration;
+    if (req.body.keyPoints) lesson.keyPoints = req.body.keyPoints;
+    if (req.body.duration !== undefined) lesson.duration = req.body.duration;
+    if (req.body.difficulty !== undefined) lesson.difficulty = req.body.difficulty;
+    if (req.body.tags) lesson.tags = req.body.tags;
+    if (req.body.visibility) lesson.visibility = req.body.visibility;
+    if (req.body.gradeLevels) lesson.gradeLevels = req.body.gradeLevels;
+    if (req.body.classSectionIds) {
+      lesson.classSectionIds = req.body.classSectionIds.filter((id) => scope.classSectionIds.includes(String(id)));
+    }
+    if (req.body.unlockType !== undefined) lesson.unlockType = req.body.unlockType;
+    if (req.body.unlockDate !== undefined) lesson.unlockDate = req.body.unlockDate;
+    if (req.body.unlockAfterLessonIds) lesson.unlockAfterLessonIds = req.body.unlockAfterLessonIds;
+    if (req.body.unlockAfterAssessmentId !== undefined) lesson.unlockAfterAssessmentId = req.body.unlockAfterAssessmentId;
+    if (req.body.unlockRequiresApproval !== undefined) lesson.unlockRequiresApproval = req.body.unlockRequiresApproval;
+    if (req.body.thumbnailUrl !== undefined) lesson.thumbnailUrl = req.body.thumbnailUrl;
+    if (req.body.bannerUrl !== undefined) lesson.bannerUrl = req.body.bannerUrl;
+    if (req.body.coverUrl !== undefined) lesson.coverUrl = req.body.coverUrl;
+    if (req.body.contentBlocks) lesson.contentBlocks = req.body.contentBlocks;
+    if (req.body.attachments) lesson.attachments = req.body.attachments;
+    if (req.body.prerequisites) lesson.prerequisites = req.body.prerequisites;
+    if (req.body.status) lesson.status = req.body.status;
+    if (req.body.isPublished !== undefined) {
+      lesson.isPublished = req.body.isPublished;
+      if (req.body.isPublished && !lesson.publishedDate) lesson.publishedDate = new Date();
+    }
 
     await lesson.save();
     await ActivityLog.create({ userId: req.user.id, action: "lesson_updated", meta: { lessonId: lesson._id } });

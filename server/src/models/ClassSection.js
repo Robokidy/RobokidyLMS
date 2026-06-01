@@ -14,6 +14,15 @@ const classSectionSchema = new Schema(
     schedule: { type: String, default: "" },
     codingTracks: [{ type: String, trim: true }],
     capacity: { type: Number, min: 1, default: 30 },
+    // Fee Management Fields
+    feeType: { 
+      type: String, 
+      enum: ["monthly", "quarterly", "yearly", "course-based", "none"],
+      default: "monthly"
+    },
+    feeAmount: { type: Number, min: 0, default: 0 },
+    currency: { type: String, default: "INR" },
+    feeDueDay: { type: Number, min: 1, max: 31, default: 5 },
     active: { type: Boolean, default: true }
   },
   { timestamps: true }

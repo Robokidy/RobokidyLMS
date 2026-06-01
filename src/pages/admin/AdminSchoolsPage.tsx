@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
-import { Archive, Bell, Building2, CalendarCheck, CheckCircle2, CreditCard, Download, Edit3, Eye, GraduationCap, Mail, MessageSquare, Phone, Plus, Search, Settings, ShieldCheck, UserRound, Users } from "lucide-react";
+import { Archive, Bell, Building2, CalendarCheck, CheckCircle2, CreditCard, Download, Edit3, Eye, FileSpreadsheet, GraduationCap, LayoutGrid, Mail, MessageSquare, Phone, Plus, Search, Settings, ShieldCheck, Table2, Upload, UserRound, Users } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import * as XLSX from "xlsx";
 import { apiFetch } from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
 import AdminShell from "@/components/layout/AdminShell";
@@ -18,11 +19,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 const emptySchool = { name: "", code: "", address: "", city: "", state: "", country: "India", pincode: "", contactPhone: "", alternatePhone: "", principalName: "", contactEmail: "", schoolType: "private", plan: "trial", active: true };
-const emptyTeacher = { fullName: "", username: "", email: "", phone: "", employeeId: "", schoolId: "", classSectionIds: [] as string[], subjects: "", qualification: "", experience: "", profilePhotoUrl: "", permissions: ["students:view", "students:manage", "classes:manage", "attendance", "materials", "assignments", "coding", "analytics", "messages", "fees:view"], active: true };
-const emptyStudent = { fullName: "", username: "", studentId: "", rollNumber: "", parentName: "", parentContact: "", email: "", phone: "", schoolId: "", classSectionIds: [] as string[], grade: "", assignedCourses: [] as string[], feeStructure: "", profilePhotoUrl: "", active: true };
-const emptyClass = { schoolId: "", name: "", grade: "", section: "A", classTeacherId: "", teacherIds: [] as string[], courseIds: [] as string[], subjects: "", schedule: "", codingTracks: "python,scratch,robotics", capacity: 30, students: [] as any[], active: true };
-const emptyFee = { schoolId: "", classSectionId: "", studentId: "", totalFees: "", paidAmount: "0", dueDate: "", notes: "" };
+const emptyTeacher = { fullName: "", username: "", email: "", phone: "", employeeId: "", schoolId: "", schoolIds: [] as string[], classSectionIds: [] as string[], subjects: "", qualification: "", experience: "", profilePhotoUrl: "", permissions: ["students:view", "students:manage", "classes:manage", "attendance", "materials", "assignments", "coding", "analytics", "messages", "fees:view"], active: true };
+const emptyStudent = { fullName: "", username: "", studentId: "", rollNumber: "", parentName: "", parentContact: "", email: "", phone: "", schoolId: "", classSectionIds: [] as string[], grade: "", assignedCourses: [] as string[], feeStructure: "", customFeeAmount: "", profilePhotoUrl: "", active: true };
+const emptyClass = { schoolId: "", name: "", grade: "", section: "A", classTeacherId: "", teacherIds: [] as string[], courseIds: [] as string[], subjects: "", schedule: "", codingTracks: "python,scratch,robotics", capacity: 30, feeType: "monthly", feeAmount: 0, currency: "INR", feeDueDay: 5, students: [] as any[], active: true };
+const emptyFee = { schoolId: "", classSectionId: "", studentId: "", feeType: "custom", totalFees: "", paidAmount: "0", currency: "INR", dueDate: "", notes: "" };
 const emptyNotification = { schoolId: "", classSectionId: "", audience: "all", title: "", body: "", active: true };
+const fixedGrades = Array.from({ length: 12 }, (_, index) => `Grade ${index + 1}`);
+const feeStatuses = ["paid", "partially-paid", "pending", "overdue", "waived", "scholarship"];
 
 function splitList(value = "") {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
@@ -32,6 +35,11 @@ function relationName(value: any) {
   if (!value) return "-";
   if (Array.isArray(value)) return value.map(relationName).filter(Boolean).join(", ") || "-";
   return value.name || value.fullName || value.username || value.title || String(value);
+}
+
+function formatCurrency(amount: any, currency = "INR") {
+  const symbols: Record<string, string> = { INR: "Rs.", USD: "$", EUR: "EUR", GBP: "GBP" };
+  return `${symbols[currency] || currency} ${Number(amount || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -69,6 +77,33 @@ function exportCsv(filename: string, headers: string[], rows: any[][]) {
   URL.revokeObjectURL(url);
 }
 
+function exportXlsx(filename: string, headers: string[], rows: any[][]) {
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
+  XLSX.writeFile(workbook, filename);
+}
+
+function parseStudentCsvRows(value = "") {
+  return value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const [fullName, rollNumber, parentName, parentContact] = line.split(",").map((item) => item.trim());
+    return { fullName, rollNumber, parentName, parentContact };
+  }).filter((row) => row.fullName.toLowerCase() !== "student name");
+}
+
+function validateStudentRows(rows: any[]) {
+  const normalized = rows.map((row) => ({
+    fullName: String(row.fullName || row["Student Name"] || row.name || "").trim(),
+    rollNumber: String(row.rollNumber || row["Roll Number"] || "").trim(),
+    parentName: String(row.parentName || row["Parent Name"] || "").trim(),
+    parentContact: String(row.parentContact || row.parentNumber || row["Parent Number"] || "").trim()
+  }));
+  return {
+    valid: normalized.filter((row) => row.fullName && row.rollNumber && row.parentName && row.parentContact),
+    invalid: normalized.filter((row) => !row.fullName || !row.rollNumber || !row.parentName || !row.parentContact)
+  };
+}
+
 export default function AdminSchoolsPage() {
   const { token } = useAuth();
   const location = useLocation();
@@ -87,7 +122,10 @@ export default function AdminSchoolsPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [schoolFilter, setSchoolFilter] = useState("");
+  const [gradeFilter, setGradeFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
+  const [feeStatusFilter, setFeeStatusFilter] = useState("");
+  const [studentView, setStudentView] = useState<"cards" | "sheet">("cards");
   const [dialog, setDialog] = useState("");
   const [editing, setEditing] = useState<any>(null);
   const [viewing, setViewing] = useState<any>(null);
@@ -130,13 +168,38 @@ export default function AdminSchoolsPage() {
   };
 
   useEffect(() => { load(); }, [token]);
-  useEffect(() => { setSearch(""); setSchoolFilter(""); setClassFilter(""); setViewing(null); }, [pageKey]);
+  useEffect(() => { setSearch(""); setSchoolFilter(""); setGradeFilter(""); setClassFilter(""); setFeeStatusFilter(""); setViewing(null); }, [pageKey]);
 
   const filteredSchools = useMemo(() => schools.filter((school) => `${school.name} ${school.code} ${school.principalName} ${school.city}`.toLowerCase().includes(search.toLowerCase())), [schools, search]);
-  const filteredTeachers = useMemo(() => teachers.filter((teacher) => `${teacher.fullName} ${teacher.username} ${teacher.email}`.toLowerCase().includes(search.toLowerCase()) && (!schoolFilter || String(teacher.schoolId?._id || teacher.schoolId) === schoolFilter)), [teachers, search, schoolFilter]);
-  const filteredStudents = useMemo(() => students.filter((student) => `${student.fullName} ${student.username} ${student.rollNumber} ${student.parentName}`.toLowerCase().includes(search.toLowerCase()) && (!classFilter || (student.classSectionIds || []).some((klass: any) => String(klass._id || klass) === classFilter))), [students, search, classFilter]);
+  const filteredTeachers = useMemo(() => teachers.filter((teacher) => {
+    const textMatch = `${teacher.fullName} ${teacher.username} ${teacher.email}`.toLowerCase().includes(search.toLowerCase());
+    if (!textMatch) return false;
+    if (!schoolFilter) return true;
+    const teacherSchoolIds = (teacher.schoolIds && teacher.schoolIds.map((s: any) => String(s._id || s))) || [];
+    const primary = String(teacher.schoolId?._id || teacher.schoolId || "");
+    return teacherSchoolIds.includes(schoolFilter) || primary === schoolFilter;
+  }), [teachers, search, schoolFilter]);
+  const filteredStudents = useMemo(() => students.filter((student) => {
+    const textMatch = `${student.fullName} ${student.username} ${student.rollNumber} ${student.parentName}`.toLowerCase().includes(search.toLowerCase());
+    if (!textMatch) return false;
+    if (schoolFilter) {
+      const primary = String(student.schoolId?._id || student.schoolId || "");
+      if (primary !== schoolFilter) return false;
+    }
+    if (gradeFilter && student.grade !== gradeFilter) return false;
+    if (classFilter && !(student.classSectionIds || []).some((klass: any) => String(klass._id || klass) === classFilter)) return false;
+    if (feeStatusFilter && student.feeAccount?.status !== feeStatusFilter) return false;
+    return true;
+  }), [students, search, schoolFilter, gradeFilter, classFilter, feeStatusFilter]);
   const filteredClasses = useMemo(() => classes.filter((klass) => `${klass.name} ${klass.grade} ${relationName(klass.teacherIds)}`.toLowerCase().includes(search.toLowerCase()) && (!schoolFilter || String(klass.schoolId?._id || klass.schoolId) === schoolFilter)), [classes, search, schoolFilter]);
-  const filteredFees = useMemo(() => fees.filter((fee) => `${relationName(fee.studentId)} ${relationName(fee.schoolId)} ${fee.status}`.toLowerCase().includes(search.toLowerCase())), [fees, search]);
+  const filteredFees = useMemo(() => fees.filter((fee) => {
+    const textMatch = `${relationName(fee.studentId)} ${relationName(fee.schoolId)} ${relationName(fee.classSectionId)} ${fee.status}`.toLowerCase().includes(search.toLowerCase());
+    if (!textMatch) return false;
+    if (schoolFilter && String(fee.schoolId?._id || fee.schoolId) !== schoolFilter) return false;
+    if (classFilter && String(fee.classSectionId?._id || fee.classSectionId) !== classFilter) return false;
+    if (feeStatusFilter && fee.status !== feeStatusFilter) return false;
+    return true;
+  }), [fees, search, schoolFilter, classFilter, feeStatusFilter]);
   const filteredNotifications = useMemo(() => notifications.filter((note) => `${note.title} ${note.body} ${note.audience}`.toLowerCase().includes(search.toLowerCase())), [notifications, search]);
   const selectedClassStudents = students.filter((student) => (student.classSectionIds || []).some((klass: any) => String(klass._id || klass) === attendanceForm.classSectionId));
 
@@ -167,9 +230,12 @@ export default function AdminSchoolsPage() {
     setEditing(row);
     setDialog(kind);
     if (kind === "school") setSchoolForm({ ...emptySchool, ...row });
-    if (kind === "teacher") setTeacherForm({ ...emptyTeacher, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classSectionIds: (row.classSectionIds || []).map((item: any) => item._id || item), subjects: (row.subjects || []).join(", ") });
+    if (kind === "teacher") {
+      const existingSchoolIds = (row.schoolIds && Array.isArray(row.schoolIds) ? row.schoolIds.map((s: any) => s._id || s) : (row.schoolId ? [(row.schoolId?._id || row.schoolId)] : []));
+      setTeacherForm({ ...emptyTeacher, ...row, schoolIds: existingSchoolIds, schoolId: existingSchoolIds[0] || (row.schoolId?._id || row.schoolId) || "", classSectionIds: (row.classSectionIds || []).map((item: any) => item._id || item), subjects: (row.subjects || []).join(", ") });
+    }
     if (kind === "student") setStudentForm({ ...emptyStudent, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classSectionIds: (row.classSectionIds || []).map((item: any) => item._id || item), assignedCourses: (row.assignedCourses || []).map((item: any) => item._id || item) });
-    if (kind === "class") setClassForm({ ...emptyClass, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classTeacherId: row.classTeacherId?._id || row.classTeacherId || "", teacherIds: (row.teacherIds || []).map((item: any) => item._id || item), courseIds: (row.courseIds || []).map((item: any) => item._id || item), subjects: (row.subjects || []).join(", "), codingTracks: (row.codingTracks || []).join(", ") });
+    if (kind === "class") setClassForm({ ...emptyClass, ...row, name: row.section || row.name, schoolId: row.schoolId?._id || row.schoolId || "", classTeacherId: row.classTeacherId?._id || row.classTeacherId || "", teacherIds: (row.teacherIds || []).map((item: any) => item._id || item), courseIds: (row.courseIds || []).map((item: any) => item._id || item), subjects: (row.subjects || []).join(", "), codingTracks: (row.codingTracks || []).join(", ") });
     if (kind === "fee") setFeeForm({ ...emptyFee, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classSectionId: row.classSectionId?._id || row.classSectionId || "", studentId: row.studentId?._id || row.studentId || "", dueDate: row.dueDate?.slice(0, 10) || "" });
     if (kind === "notification") setNotificationForm({ ...emptyNotification, ...row, schoolId: row.schoolId?._id || row.schoolId || "", classSectionId: row.classSectionId?._id || row.classSectionId || "" });
   };
@@ -185,7 +251,7 @@ export default function AdminSchoolsPage() {
         const res = await apiFetch(editing ? `/admin/students/${editing._id}` : "/admin/students", { method: editing ? "PUT" : "POST", body: studentForm }, token);
         if (res.tempPassword) setCredential(`${res.username} temporary password: ${res.tempPassword}`);
       }
-      if (kind === "class") await apiFetch(editing ? `/admin/classes/${editing._id}` : "/admin/classes", { method: editing ? "PUT" : "POST", body: { ...classForm, subjects: splitList(classForm.subjects), codingTracks: splitList(classForm.codingTracks) } }, token);
+      if (kind === "class") await apiFetch(editing ? `/admin/classes/${editing._id}` : "/admin/classes", { method: editing ? "PUT" : "POST", body: { ...classForm, section: classForm.name || classForm.section, name: classForm.grade && classForm.name ? `${classForm.grade} - ${classForm.name}` : classForm.name, teacherIds: classForm.classTeacherId ? [classForm.classTeacherId] : classForm.teacherIds, subjects: splitList(classForm.subjects), codingTracks: splitList(classForm.codingTracks) } }, token);
       if (kind === "fee") await apiFetch(editing ? `/admin/fees/${editing._id}` : "/admin/fees", { method: editing ? "PUT" : "POST", body: feeForm }, token);
       if (kind === "notification") await apiFetch(editing ? `/admin/notifications/${editing._id}` : "/admin/notifications", { method: editing ? "PUT" : "POST", body: notificationForm }, token);
       toast.success(`${kind} saved`);
@@ -194,6 +260,52 @@ export default function AdminSchoolsPage() {
       load();
     } catch (err: any) {
       toast.error(err.message || "Unable to save");
+    }
+  };
+
+  const updateStudentFee = async (student: any, status: string) => {
+    try {
+      const current = student.feeAccount || {};
+      if (status === "partially-paid") {
+        const pending = Number(current.pendingAmount ?? Math.max(0, Number(current.totalFees || 0) - Number(current.paidAmount || 0)));
+        const value = window.prompt(`Amount paid for ${student.fullName || student.username}. Pending balance: ${formatCurrency(pending)}`, "");
+        if (!value) return;
+        const amount = Number(value);
+        if (!Number.isFinite(amount) || amount <= 0) return toast.error("Enter a valid payment amount");
+        if (current._id) {
+          await apiFetch(`/admin/fees/${current._id}/payments`, { method: "POST", body: { amount, paymentDate: new Date().toISOString().slice(0, 10) } }, token);
+        } else {
+          await apiFetch(`/admin/students/${student._id}/fees`, {
+            method: "PUT",
+            body: {
+              status,
+              amountPaid: amount,
+              paymentDate: new Date().toISOString().slice(0, 10),
+              schoolId: student.schoolId?._id || student.schoolId,
+              classSectionId: student.classSectionIds?.[0]?._id || student.classSectionIds?.[0],
+              totalFees: current.totalFees || student.feeAmount || 0,
+              paidAmount: current.paidAmount || student.paidAmount || 0
+            }
+          }, token);
+        }
+        toast.success("Payment recorded");
+        load();
+        return;
+      }
+      await apiFetch(`/admin/students/${student._id}/fees`, {
+        method: "PUT",
+        body: {
+          status,
+          schoolId: student.schoolId?._id || student.schoolId,
+          classSectionId: student.classSectionIds?.[0]?._id || student.classSectionIds?.[0],
+          totalFees: current.totalFees || 0,
+          paidAmount: current.paidAmount || 0
+        }
+      }, token);
+      toast.success("Fee status updated");
+      load();
+    } catch (err: any) {
+      toast.error(err.message || "Unable to update fee");
     }
   };
 
@@ -226,20 +338,38 @@ export default function AdminSchoolsPage() {
                 <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${pageKey}`} />
               </div>
             )}
-            {["teachers", "classes"].includes(pageKey) && (
+            {["teachers", "classes", "students", "fees"].includes(pageKey) && (
               <NativeSelect value={schoolFilter} onChange={(event) => setSchoolFilter(event.target.value)} className="md:w-64">
                 <option value="">All schools</option>
                 {schools.map((school) => <option key={school._id} value={school._id}>{school.name}</option>)}
               </NativeSelect>
             )}
-            {pageKey === "students" && (
-              <NativeSelect value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="md:w-64">
-                <option value="">All classes</option>
-                {classes.map((klass) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}
-              </NativeSelect>
+            {(pageKey === "students" || pageKey === "fees") && (
+              <>
+                {pageKey === "students" && <NativeSelect value={gradeFilter} onChange={(event) => setGradeFilter(event.target.value)} className="md:w-44">
+                  <option value="">All grades</option>
+                  {fixedGrades.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
+                </NativeSelect>}
+                <NativeSelect value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="md:w-52">
+                  <option value="">All classes</option>
+                  {classes.filter((klass) => !schoolFilter || String(klass.schoolId?._id || klass.schoolId) === schoolFilter).map((klass) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}
+                </NativeSelect>
+                <NativeSelect value={feeStatusFilter} onChange={(event) => setFeeStatusFilter(event.target.value)} className="md:w-44">
+                  <option value="">All fees</option>
+                  <option value="paid">Paid</option>
+                  {feeStatuses.map((status) => <option key={status} value={status}>{feeLabel(status)}</option>)}
+                </NativeSelect>
+              </>
             )}
           </div>
-          {actionButton && <Button onClick={() => openCreate(actionButton[1])}><Plus className="mr-2 h-4 w-4" />{actionButton[0]}</Button>}
+          <div className="flex flex-wrap gap-2">
+            {pageKey === "students" && (
+              <>
+                <Button variant="outline" onClick={() => setStudentView(studentView === "cards" ? "sheet" : "cards")}>{studentView === "cards" ? <Table2 className="mr-2 h-4 w-4" /> : <LayoutGrid className="mr-2 h-4 w-4" />}{studentView === "cards" ? "Spreadsheet" : "Cards"}</Button>
+              </>
+            )}
+            {actionButton && <Button onClick={() => openCreate(actionButton[1])}><Plus className="mr-2 h-4 w-4" />{actionButton[0]}</Button>}
+          </div>
         </div>
       )}
 
@@ -247,7 +377,7 @@ export default function AdminSchoolsPage() {
         <>
           {pageKey === "schools" && <SchoolsView rows={filteredSchools} teachers={teachers} classes={classes} students={students} onView={setViewing} onEdit={(row: any) => openEdit("school", row)} onArchive={(row: any) => archive(`/admin/schools/${row._id}`)} />}
           {pageKey === "teachers" && <TeachersView rows={filteredTeachers} students={students} onView={setViewing} onEdit={(row: any) => openEdit("teacher", row)} onArchive={(row: any) => archive(`/admin/teachers/${row._id}`)} />}
-          {pageKey === "students" && <StudentsView rows={filteredStudents} onView={setViewing} onEdit={(row: any) => openEdit("student", row)} onArchive={(row: any) => archive(`/admin/students/${row._id}`)} />}
+          {pageKey === "students" && <StudentsView rows={filteredStudents} view={studentView} onView={setViewing} onEdit={(row: any) => openEdit("student", row)} onArchive={(row: any) => archive(`/admin/students/${row._id}`)} onFeeChange={updateStudentFee} />}
           {pageKey === "classes" && <ClassesView rows={filteredClasses} students={students} onView={setViewing} onEdit={(row: any) => openEdit("class", row)} onArchive={(row: any) => archive(`/admin/classes/${row._id}`)} />}
           {pageKey === "fees" && <FeesView rows={filteredFees} />}
           {pageKey === "attendance" && <AttendanceView classes={classes} students={selectedClassStudents} attendance={attendance} form={attendanceForm} setForm={setAttendanceForm} onSave={markAttendance} />}
@@ -269,7 +399,7 @@ export default function AdminSchoolsPage() {
           {dialog === "school" && <SchoolForm form={schoolForm} setForm={setSchoolForm} onSubmit={() => submit("school")} />}
           {dialog === "teacher" && <TeacherForm form={teacherForm} setForm={setTeacherForm} schools={schools} classes={classes} onSubmit={() => submit("teacher")} />}
           {dialog === "student" && <StudentForm form={studentForm} setForm={setStudentForm} schools={schools} classes={classes} courses={courses} onSubmit={() => submit("student")} />}
-          {dialog === "class" && <ClassForm form={classForm} setForm={setClassForm} schools={schools} teachers={teachers} courses={courses} onSubmit={() => submit("class")} />}
+          {dialog === "class" && <ClassForm form={classForm} setForm={setClassForm} schools={schools} teachers={teachers} courses={courses} students={students} editing={editing} onSubmit={() => submit("class")} onStudentEdit={(row: any) => openEdit("student", row)} onStudentDelete={(row: any) => archive(`/admin/students/${row._id}`)} onStudentTransfer={(row: any) => openEdit("student", row)} />}
           {dialog === "fee" && <FeeForm form={feeForm} setForm={setFeeForm} schools={schools} classes={classes} students={students} onSubmit={() => submit("fee")} />}
           {dialog === "notification" && <NotificationForm form={notificationForm} setForm={setNotificationForm} schools={schools} classes={classes} onSubmit={() => submit("notification")} />}
         </DialogContent>
@@ -292,22 +422,33 @@ function TeachersView({ rows, students, onView, onEdit, onArchive }: any) {
   return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((teacher: any) => { const classIds = new Set((teacher.classSectionIds || []).map((item: any) => String(item._id || item))); const count = students.filter((student: any) => (student.classSectionIds || []).some((item: any) => classIds.has(String(item._id || item)))).length; return <Card key={teacher._id} className="rounded-lg"><CardHeader><div className="flex items-center gap-3"><AvatarTile src={teacher.profilePhotoUrl} label={teacher.fullName || teacher.username} /><div className="min-w-0"><CardTitle className="truncate text-lg">{teacher.fullName || teacher.username}</CardTitle><p className="truncate text-sm text-slate-500">{relationName(teacher.schoolId)}</p></div></div></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Classes" value={(teacher.classSectionIds || []).length} /><MetricLite label="Students" value={count} /><MetricLite label="Subjects" value={(teacher.subjects || []).length} /></div><Badge variant={teacher.active ? "default" : "secondary"}>{teacher.active ? "Active" : "Archived"}</Badge><CardActions onView={() => onView(teacher)} onEdit={() => onEdit(teacher)} onArchive={() => onArchive(teacher)} /></CardContent></Card>; })}</div>;
 }
 
-function StudentsView({ rows, onView, onEdit, onArchive }: any) {
+function feeLabel(status?: string) {
+  const normalized = status === "partial" ? "partially-paid" : status || "pending";
+  return normalized.split("-").map((part) => part.replace(/^\w/, (value) => value.toUpperCase())).join(" ");
+}
+
+function StudentsView({ rows, view, onView, onEdit, onArchive, onFeeChange }: any) {
   if (!rows.length) return <EmptyState title="No students found." />;
-  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((student: any, index: number) => <Card key={student._id} className="rounded-lg"><CardHeader><div className="flex items-center gap-3"><AvatarTile src={student.profilePhotoUrl} label={student.fullName || student.username} /><div className="min-w-0"><CardTitle className="truncate text-lg">{student.fullName || student.username}</CardTitle><p className="text-sm text-slate-500">Roll {student.rollNumber || "-"} - {relationName(student.classSectionIds)}</p></div></div></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Attendance" value={`${82 + (index % 12)}%`} /><MetricLite label="Assessments" value={index % 5} /><MetricLite label="Progress" value={`${40 + (index * 7) % 55}%`} /></div><Progress value={40 + (index * 7) % 55} /><p className="text-sm text-slate-500">Parent: {student.parentName || "-"} {student.parentContact || ""}</p><CardActions onView={() => onView(student)} onEdit={() => onEdit(student)} onArchive={() => onArchive(student)} /></CardContent></Card>)}</div>;
+  if (view === "sheet") {
+    return <Card className="rounded-lg"><CardHeader className="flex-row items-center justify-between"><CardTitle>Spreadsheet View</CardTitle><Button variant="outline" onClick={() => exportCsv("students.csv", ["Student Name", "Roll Number", "School", "Grade", "Class", "Fee Amount", "Paid Amount", "Balance", "Fee Status", "Last Payment", "Performance", "Parent Name", "Parent Number"], rows.map((student: any) => [student.fullName || student.username, student.rollNumber, relationName(student.schoolId), student.grade, relationName(student.classSectionIds), student.feeAccount?.totalFees || student.feeAmount || 0, student.feeAccount?.paidAmount || student.paidAmount || 0, student.feeAccount?.pendingAmount || student.pendingAmount || 0, feeLabel(student.feeAccount?.status || student.feeStatus), student.feeAccount?.lastPaymentDate || student.lastPaymentDate || "", student.performanceScore || 0, student.parentName, student.parentContact]))}><Download className="mr-2 h-4 w-4" />Export CSV</Button></CardHeader><CardContent className="overflow-x-auto"><table className="w-full min-w-[1240px] text-sm"><thead className="sticky top-0 bg-white dark:bg-slate-950"><tr className="border-b text-left text-slate-500">{["Student Name", "Roll Number", "School", "Grade", "Class", "Fee Amount", "Paid", "Balance", "Fee Status", "Last Payment", "Actions"].map((head) => <th key={head} className="px-3 py-2 font-medium">{head}</th>)}</tr></thead><tbody>{rows.map((student: any) => { const fee = student.feeAccount || {}; return <tr key={student._id} className="border-b"><td className="px-3 py-2 font-medium">{student.fullName || student.username}</td><td className="px-3 py-2">{student.rollNumber || "-"}</td><td className="px-3 py-2">{relationName(student.schoolId)}</td><td className="px-3 py-2">{student.grade || "-"}</td><td className="px-3 py-2">{relationName(student.classSectionIds)}</td><td className="px-3 py-2">{formatCurrency(fee.totalFees || student.feeAmount)}</td><td className="px-3 py-2">{formatCurrency(fee.paidAmount || student.paidAmount)}</td><td className="px-3 py-2">{formatCurrency(fee.pendingAmount || student.pendingAmount)}</td><td className="px-3 py-2"><NativeSelect value={fee.status || student.feeStatus || "pending"} onChange={(event) => onFeeChange(student, event.target.value)} className="h-8 min-w-36">{feeStatuses.map((status) => <option key={status} value={status}>{feeLabel(status)}</option>)}</NativeSelect></td><td className="px-3 py-2">{fee.lastPaymentDate ? new Date(fee.lastPaymentDate).toLocaleDateString() : "-"}</td><td className="px-3 py-2"><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => onView(student)}>View</Button><Button size="sm" variant="outline" onClick={() => onEdit(student)}>Edit</Button><Button size="sm" variant="destructive" onClick={() => onArchive(student)}>Archive</Button></div></td></tr>; })}</tbody></table></CardContent></Card>;
+  }
+  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((student: any) => { const fee = student.feeAccount || {}; return <Card key={student._id} className="rounded-lg"><CardHeader><div className="flex items-center gap-3"><AvatarTile src={student.profilePhotoUrl} label={student.fullName || student.username} /><div className="min-w-0"><CardTitle className="truncate text-lg">{student.fullName || student.username}</CardTitle><p className="text-sm text-slate-500">Roll {student.rollNumber || "-"} - {relationName(student.classSectionIds)}</p></div></div></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Total Fee" value={formatCurrency(fee.totalFees || student.feeAmount)} /><MetricLite label="Paid" value={formatCurrency(fee.paidAmount || student.paidAmount)} /><MetricLite label="Balance" value={formatCurrency(fee.pendingAmount || student.pendingAmount)} /></div><div className="flex flex-wrap gap-2"><Badge variant="outline">{student.grade || "No grade"}</Badge><Badge variant={(fee.status || student.feeStatus) === "paid" ? "default" : "secondary"}>{feeLabel(fee.status || student.feeStatus)}</Badge><Badge variant={(student.performanceScore || 0) < 50 ? "destructive" : "secondary"}>{student.performanceLabel || "Average"}</Badge></div><p className="text-sm text-slate-500">Parent: {student.parentName || "-"} {student.parentContact || ""}</p><CardActions onView={() => onView(student)} onEdit={() => onEdit(student)} onArchive={() => onArchive(student)} /></CardContent></Card>; })}</div>;
 }
 
 function ClassesView({ rows, students, onView, onEdit, onArchive }: any) {
   if (!rows.length) return <EmptyState title="No classes found." />;
-  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((klass: any, index: number) => { const count = students.filter((student: any) => (student.classSectionIds || []).some((item: any) => String(item._id || item) === String(klass._id))).length; return <Card key={klass._id} className="rounded-lg"><CardHeader><CardTitle className="text-lg">{klass.name}</CardTitle><p className="text-sm text-slate-500">{relationName(klass.schoolId)}</p></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Students" value={count} /><MetricLite label="Courses" value={(klass.courseIds || []).length} /><MetricLite label="Attendance" value={`${78 + (index % 18)}%`} /></div><p className="text-sm text-slate-500">Teacher: {relationName(klass.classTeacherId || klass.teacherIds)}</p><CardActions onView={() => onView(klass)} onEdit={() => onEdit(klass)} onArchive={() => onArchive(klass)} /></CardContent></Card>; })}</div>;
+  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rows.map((klass: any) => { const classStudents = students.filter((student: any) => (student.classSectionIds || []).some((item: any) => String(item._id || item) === String(klass._id))); const expected = classStudents.reduce((sum: number, student: any) => sum + Number(student.feeAccount?.totalFees || student.feeAmount || klass.feeAmount || 0), 0); const collected = classStudents.reduce((sum: number, student: any) => sum + Number(student.feeAccount?.paidAmount || student.paidAmount || 0), 0); const pending = Math.max(0, expected - collected); const pct = expected ? Math.round((collected / expected) * 100) : 0; return <Card key={klass._id} className="rounded-lg"><CardHeader><CardTitle className="text-lg">{klass.name}</CardTitle><p className="text-sm text-slate-500">{relationName(klass.schoolId)}</p></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Students" value={classStudents.length} /><MetricLite label="Class Fee" value={formatCurrency(klass.feeAmount, klass.currency)} /><MetricLite label="Collected" value={`${pct}%`} /></div><div className="grid grid-cols-3 gap-2 text-center"><MetricLite label="Expected" value={formatCurrency(expected, klass.currency)} /><MetricLite label="Paid" value={formatCurrency(collected, klass.currency)} /><MetricLite label="Pending" value={formatCurrency(pending, klass.currency)} /></div><p className="text-sm text-slate-500">Teacher: {relationName(klass.classTeacherId || klass.teacherIds)}</p><CardActions onView={() => onView(klass)} onEdit={() => onEdit(klass)} onArchive={() => onArchive(klass)} /></CardContent></Card>; })}</div>;
 }
 
 function FeesView({ rows }: any) {
   const total = rows.reduce((sum: number, fee: any) => sum + Number(fee.totalFees || 0), 0);
   const paid = rows.reduce((sum: number, fee: any) => sum + Number(fee.paidAmount || 0), 0);
   const pending = Math.max(0, total - paid);
+  const overdue = rows.filter((fee: any) => fee.status === "overdue").reduce((sum: number, fee: any) => sum + Number(fee.pendingAmount || 0), 0);
+  const exportRows = rows.map((fee: any) => [relationName(fee.studentId), relationName(fee.schoolId), relationName(fee.classSectionId), fee.totalFees, fee.paidAmount, fee.pendingAmount ?? Math.max(0, Number(fee.totalFees || 0) - Number(fee.paidAmount || 0)), fee.status, fee.lastPaymentDate ? new Date(fee.lastPaymentDate).toLocaleDateString() : ""]);
+  const headers = ["Student", "School", "Class", "Total", "Paid", "Balance", "Status", "Last Payment"];
   const chart = rows.slice(0, 8).map((fee: any, index: number) => ({ name: `M${index + 1}`, paid: Number(fee.paidAmount || 0), pending: Math.max(0, Number(fee.totalFees || 0) - Number(fee.paidAmount || 0)) }));
-  return <div className="space-y-4"><div className="grid gap-3 md:grid-cols-3"><Metric label="Total Collection" value={`Rs. ${total.toLocaleString()}`} icon={CreditCard} /><Metric label="Paid Collection" value={`Rs. ${paid.toLocaleString()}`} icon={CheckCircle2} /><Metric label="Pending Collection" value={`Rs. ${pending.toLocaleString()}`} icon={CalendarCheck} /></div><Card className="rounded-lg"><CardHeader className="flex-row items-center justify-between"><CardTitle>Monthly Revenue</CardTitle><Button variant="outline" onClick={() => exportCsv("fees.csv", ["Student", "School", "Total", "Paid", "Status"], rows.map((fee: any) => [relationName(fee.studentId), relationName(fee.schoolId), fee.totalFees, fee.paidAmount, fee.status]))}><Download className="mr-2 h-4 w-4" />Export</Button></CardHeader><CardContent className="h-72"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" /><YAxis /><Tooltip /><Bar dataKey="paid" fill="#16a34a" radius={[4, 4, 0, 0]} /><Bar dataKey="pending" fill="#f97316" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card><div className="grid gap-3">{rows.map((fee: any) => <div key={fee._id} className="grid gap-3 rounded-lg border bg-white p-4 md:grid-cols-5 dark:bg-slate-900"><p className="font-medium">{relationName(fee.studentId)}</p><p className="text-slate-500">{relationName(fee.schoolId)}</p><p>Rs. {Number(fee.totalFees || 0).toLocaleString()}</p><p>Paid Rs. {Number(fee.paidAmount || 0).toLocaleString()}</p><Badge className="w-fit" variant={fee.status === "paid" ? "default" : "secondary"}>{fee.status || "pending"}</Badge></div>)}</div></div>;
+  return <div className="space-y-4"><div className="grid gap-3 md:grid-cols-4"><Metric label="Expected Revenue" value={formatCurrency(total)} icon={CreditCard} /><Metric label="Collected Revenue" value={formatCurrency(paid)} icon={CheckCircle2} /><Metric label="Pending Revenue" value={formatCurrency(pending)} icon={CalendarCheck} /><Metric label="Overdue Collection" value={formatCurrency(overdue)} icon={CalendarCheck} /></div><Card className="rounded-lg"><CardHeader className="flex-row items-center justify-between"><CardTitle>Fee Analytics</CardTitle><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => exportCsv("fee-report.csv", headers, exportRows)}><Download className="mr-2 h-4 w-4" />CSV</Button><Button variant="outline" onClick={() => exportXlsx("fee-report.xlsx", headers, exportRows)}><Download className="mr-2 h-4 w-4" />Excel</Button><Button variant="outline" onClick={() => window.print()}><Download className="mr-2 h-4 w-4" />PDF</Button></div></CardHeader><CardContent className="h-72"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" /><YAxis /><Tooltip /><Bar dataKey="paid" fill="#16a34a" radius={[4, 4, 0, 0]} /><Bar dataKey="pending" fill="#f97316" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card><div className="grid gap-3">{rows.map((fee: any) => <div key={fee._id} className="grid gap-3 rounded-lg border bg-white p-4 md:grid-cols-7 dark:bg-slate-900"><p className="font-medium">{relationName(fee.studentId)}</p><p className="text-slate-500">{relationName(fee.classSectionId)}</p><p>{formatCurrency(fee.totalFees, fee.currency)}</p><p>Paid {formatCurrency(fee.paidAmount, fee.currency)}</p><p>Balance {formatCurrency(fee.pendingAmount, fee.currency)}</p><p>{fee.lastPaymentDate ? new Date(fee.lastPaymentDate).toLocaleDateString() : "-"}</p><Badge className="w-fit" variant={fee.status === "paid" ? "default" : "secondary"}>{feeLabel(fee.status)}</Badge></div>)}</div></div>;
 }
 
 function AttendanceView({ classes, students, attendance, form, setForm, onSave }: any) {
@@ -326,8 +467,21 @@ function SettingsView() {
 }
 
 function ProfileView({ entity, type, students, teachers, classes, fees, attendance }: any) {
+  if (type === "students") {
+    const fee = entity.feeAccount || fees.find((row: any) => String(row.studentId?._id || row.studentId) === String(entity._id)) || {};
+    return <Tabs defaultValue="overview"><TabsList className="flex-wrap"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="fees">Fee Tab</TabsTrigger><TabsTrigger value="history">Payment History</TabsTrigger></TabsList><TabsContent value="overview" className="mt-4 grid gap-3 md:grid-cols-3"><MetricLite label="School" value={relationName(entity.schoolId)} /><MetricLite label="Class" value={relationName(entity.classSectionIds)} /><MetricLite label="Grade" value={entity.grade || "-"} /><MetricLite label="Attendance" value={`${entity.attendancePercentage || 0}%`} /><MetricLite label="Performance" value={entity.performanceScore || 0} /><MetricLite label="Status" value={entity.active ? "Active" : "Archived"} /></TabsContent><TabsContent value="fees" className="mt-4 grid gap-3 md:grid-cols-3"><MetricLite label="Total Fee" value={formatCurrency(fee.totalFees || entity.feeAmount, fee.currency)} /><MetricLite label="Amount Paid" value={formatCurrency(fee.paidAmount || entity.paidAmount, fee.currency)} /><MetricLite label="Pending Amount" value={formatCurrency(fee.pendingAmount || entity.pendingAmount, fee.currency)} /><MetricLite label="Payment Status" value={feeLabel(fee.status || entity.feeStatus)} /><MetricLite label="Last Payment Date" value={fee.lastPaymentDate ? new Date(fee.lastPaymentDate).toLocaleDateString() : "-"} /><MetricLite label="Due Date" value={fee.dueDate ? new Date(fee.dueDate).toLocaleDateString() : "-"} /></TabsContent><TabsContent value="history" className="mt-4 grid gap-2">{(fee.payments || []).length ? fee.payments.map((payment: any, index: number) => <div key={payment._id || index} className="grid gap-2 rounded-md border p-3 text-sm md:grid-cols-4"><span>{payment.paidAt ? new Date(payment.paidAt).toLocaleDateString() : "-"}</span><span>{formatCurrency(payment.amount, fee.currency)}</span><span className="capitalize">{payment.method || "cash"}</span><span>{payment.reference || payment.receiptNo || "-"}</span></div>) : <p className="text-sm text-slate-500">No payment history yet.</p>}</TabsContent></Tabs>;
+  }
   const classIds = new Set((entity.classSectionIds || entity.teacherIds || []).map((item: any) => String(item._id || item)));
   const relatedStudents = type === "classes" ? students.filter((student: any) => (student.classSectionIds || []).some((item: any) => String(item._id || item) === String(entity._id))) : students.filter((student: any) => (student.classSectionIds || []).some((item: any) => classIds.has(String(item._id || item))));
+  if (type === "classes") {
+    const classFees = fees.filter((fee: any) => String(fee.classSectionId?._id || fee.classSectionId) === String(entity._id));
+    const totalFees = classFees.reduce((sum: number, fee: any) => sum + Number(fee.totalFees || 0), 0);
+    const paidFees = classFees.reduce((sum: number, fee: any) => sum + Number(fee.paidAmount || 0), 0);
+    const attendanceRows = attendance.filter((row: any) => String(row.classSectionId?._id || row.classSectionId) === String(entity._id));
+    const presentRows = attendanceRows.filter((row: any) => ["present", "late"].includes(row.status));
+    const assessmentAverage = relatedStudents.length ? Math.round(relatedStudents.reduce((sum: number, student: any) => sum + Number(student.performanceScore || 0), 0) / relatedStudents.length) : 0;
+    return <Tabs defaultValue="overview"><TabsList className="flex-wrap"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="students">Students</TabsTrigger><TabsTrigger value="attendance">Attendance</TabsTrigger><TabsTrigger value="assessments">Assessments</TabsTrigger><TabsTrigger value="materials">Materials</TabsTrigger><TabsTrigger value="performance">Performance</TabsTrigger></TabsList><TabsContent value="overview" className="mt-4 space-y-4"><div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4"><MetricLite label="School" value={relationName(entity.schoolId)} /><MetricLite label="Grade" value={entity.grade || "-"} /><MetricLite label="Class" value={entity.section || entity.name} /><MetricLite label="Teacher" value={relationName(entity.classTeacherId || entity.teacherIds)} /><MetricLite label="Courses" value={(entity.courseIds || []).length} /><MetricLite label="Capacity" value={entity.capacity || 0} /><MetricLite label="Student Count" value={relatedStudents.length} /><MetricLite label="Attendance %" value={`${attendanceRows.length ? Math.round((presentRows.length / attendanceRows.length) * 100) : 0}%`} /><MetricLite label="Fees Collection %" value={`${totalFees ? Math.round((paidFees / totalFees) * 100) : 0}%`} /><MetricLite label="Assessment Average" value={`${assessmentAverage}%`} /></div></TabsContent><TabsContent value="students" className="mt-4"><StudentMiniTable rows={relatedStudents} /></TabsContent><TabsContent value="attendance" className="mt-4"><p className="text-sm text-slate-500">{attendanceRows.length} attendance records available.</p></TabsContent><TabsContent value="assessments" className="mt-4"><Metric label="Assessment Average" value={`${assessmentAverage}%`} icon={CheckCircle2} /></TabsContent><TabsContent value="materials" className="mt-4"><p className="text-sm text-slate-500">Class course materials are controlled by assigned courses.</p></TabsContent><TabsContent value="performance" className="mt-4"><Progress value={assessmentAverage} /></TabsContent></Tabs>;
+  }
   return <Tabs defaultValue="overview"><TabsList className="flex-wrap"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="teachers">Teachers</TabsTrigger><TabsTrigger value="classes">Classes</TabsTrigger><TabsTrigger value="students">Students</TabsTrigger><TabsTrigger value="attendance">Attendance</TabsTrigger><TabsTrigger value="fees">Fees</TabsTrigger><TabsTrigger value="reports">Reports</TabsTrigger></TabsList><TabsContent value="overview" className="mt-4 grid gap-3 md:grid-cols-3"><Metric label="Students" value={relatedStudents.length || entity.studentCount || 0} icon={Users} /><Metric label="Teachers" value={(entity.teacherIds || []).length || entity.teacherCount || 0} icon={ShieldCheck} /><Metric label="Classes" value={(entity.classSectionIds || []).length || entity.classCount || 0} icon={GraduationCap} /></TabsContent><TabsContent value="teachers" className="mt-4 grid gap-2">{teachers.slice(0, 8).map((teacher: any) => <div key={teacher._id} className="rounded-md border p-3">{teacher.fullName || teacher.username}</div>)}</TabsContent><TabsContent value="classes" className="mt-4 grid gap-2">{classes.slice(0, 8).map((klass: any) => <div key={klass._id} className="rounded-md border p-3">{klass.name}</div>)}</TabsContent><TabsContent value="students" className="mt-4 grid gap-2">{relatedStudents.slice(0, 12).map((student: any) => <div key={student._id} className="rounded-md border p-3">{student.fullName || student.username}</div>)}</TabsContent><TabsContent value="attendance" className="mt-4"><p className="text-sm text-slate-500">{attendance.length} attendance records available.</p></TabsContent><TabsContent value="fees" className="mt-4"><p className="text-sm text-slate-500">{fees.length} fee records available.</p></TabsContent><TabsContent value="reports" className="mt-4"><p className="text-sm text-slate-500">Performance, assessment, and operation reports are available from Analytics.</p></TabsContent></Tabs>;
 }
 
@@ -348,19 +502,129 @@ function SchoolForm({ form, setForm, onSubmit }: any) {
 }
 
 function TeacherForm({ form, setForm, schools, classes, onSubmit }: any) {
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="Full Name"><Input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></Field><UsernameField value={form.username} seed={form.fullName || form.email || "teacher"} onChange={(username) => setForm({ ...form, username })} /><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Email"><Input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field><Field label="Phone"><Input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></Field><Field label="Subjects"><Input value={form.subjects} onChange={(event) => setForm({ ...form, subjects: event.target.value })} placeholder="Python, Robotics" /></Field><div className="md:col-span-2"><Field label="Classes"><MultiSelect values={form.classSectionIds} options={classes.filter((klass: any) => !form.schoolId || String(klass.schoolId?._id || klass.schoolId) === form.schoolId)} onChange={(value: string[]) => setForm({ ...form, classSectionIds: value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId} onClick={onSubmit}>Save Teacher</Button></div>;
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <Field label="Full Name"><Input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></Field>
+      <UsernameField value={form.username} seed={form.fullName || form.email || "teacher"} onChange={(username) => setForm({ ...form, username })} />
+      <Field label="Schools"><MultiSelect values={form.schoolIds || []} options={schools} onChange={(value: string[]) => setForm({ ...form, schoolIds: value, schoolId: value[0] || "" })} /></Field>
+      <Field label="Email"><Input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field>
+      <Field label="Phone"><Input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></Field>
+      <Field label="Subjects"><Input value={form.subjects} onChange={(event) => setForm({ ...form, subjects: event.target.value })} placeholder="Python, Robotics" /></Field>
+      <div className="md:col-span-2"><Field label="Classes"><MultiSelect values={form.classSectionIds} options={classes.filter((klass: any) => !form.schoolId || String(klass.schoolId?._id || klass.schoolId) === form.schoolId)} onChange={(value: string[]) => setForm({ ...form, classSectionIds: value })} /></Field></div>
+      <Button className="md:col-span-2" disabled={!form.schoolIds || !form.schoolIds.length} onClick={onSubmit}>Save Teacher</Button>
+    </div>
+  );
 }
 
 function StudentForm({ form, setForm, schools, classes, courses, onSubmit }: any) {
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="Full Name"><Input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></Field><UsernameField value={form.username} seed={form.fullName || form.studentId || "student"} onChange={(username) => setForm({ ...form, username })} /><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Roll Number"><Input value={form.rollNumber} onChange={(event) => setForm({ ...form, rollNumber: event.target.value })} /></Field><Field label="Parent"><Input value={form.parentName} onChange={(event) => setForm({ ...form, parentName: event.target.value })} /></Field><Field label="Parent Phone"><Input value={form.parentContact} onChange={(event) => setForm({ ...form, parentContact: event.target.value })} /></Field><div className="md:col-span-2"><Field label="Classes"><MultiSelect values={form.classSectionIds} options={classes.filter((klass: any) => !form.schoolId || String(klass.schoolId?._id || klass.schoolId) === form.schoolId)} onChange={(value: string[]) => setForm({ ...form, classSectionIds: value })} /></Field></div><div className="md:col-span-2"><Field label="Courses"><MultiSelect values={form.assignedCourses} options={courses.filter((course: any) => course.active)} onChange={(value: string[]) => setForm({ ...form, assignedCourses: value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId} onClick={onSubmit}>Save Student</Button></div>;
+  const selectedClass = classes.find((klass: any) => String(klass._id) === String(form.classSectionIds?.[0]));
+  return <div className="grid gap-3 md:grid-cols-2"><Field label="Full Name"><Input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></Field><UsernameField value={form.username} seed={form.fullName || form.studentId || "student"} onChange={(username) => setForm({ ...form, username })} /><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value, classSectionIds: [], grade: "" })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Grade"><NativeSelect value={form.grade} onChange={(event) => setForm({ ...form, grade: event.target.value, classSectionIds: [] })}><option value="">Select grade</option>{fixedGrades.map((grade) => <option key={grade} value={grade}>{grade}</option>)}</NativeSelect></Field><Field label="Roll Number"><Input value={form.rollNumber} onChange={(event) => setForm({ ...form, rollNumber: event.target.value })} /></Field><Field label="Email"><Input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field><Field label="Parent"><Input value={form.parentName} onChange={(event) => setForm({ ...form, parentName: event.target.value })} /></Field><Field label="Parent Phone"><Input value={form.parentContact} onChange={(event) => setForm({ ...form, parentContact: event.target.value })} /></Field><div className="md:col-span-2"><Field label="Classes"><MultiSelect values={form.classSectionIds} options={classes.filter((klass: any) => (!form.schoolId || String(klass.schoolId?._id || klass.schoolId) === form.schoolId) && (!form.grade || klass.grade === form.grade))} onChange={(value: string[]) => setForm({ ...form, classSectionIds: value })} /></Field></div><Field label="Default Class Fee"><Input value={selectedClass ? formatCurrency(selectedClass.feeAmount, selectedClass.currency) : "Select a class"} readOnly /></Field><Field label="Custom Fee Override"><Input type="number" min={0} value={form.customFeeAmount || ""} onChange={(event) => setForm({ ...form, customFeeAmount: event.target.value })} placeholder="Optional scholarship amount" /></Field><div className="md:col-span-2"><Field label="Courses"><MultiSelect values={form.assignedCourses} options={courses.filter((course: any) => course.active)} onChange={(value: string[]) => setForm({ ...form, assignedCourses: value })} /></Field></div><Field label="Status"><NativeSelect value={form.active ? "active" : "archived"} onChange={(event) => setForm({ ...form, active: event.target.value === "active" })}><option value="active">Active</option><option value="archived">Archived</option></NativeSelect></Field><Button className="md:col-span-2" disabled={!form.schoolId || !form.classSectionIds.length} onClick={onSubmit}>Save Student</Button></div>;
 }
 
-function ClassForm({ form, setForm, schools, teachers, courses, onSubmit }: any) {
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Class Name"><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field><Field label="Grade"><Input value={form.grade} onChange={(event) => setForm({ ...form, grade: event.target.value })} /></Field><Field label="Capacity"><Input type="number" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} /></Field><Field label="Class Teacher"><NativeSelect value={form.classTeacherId} onChange={(event) => setForm({ ...form, classTeacherId: event.target.value })}><option value="">Select teacher</option>{teachers.map((teacher: any) => <option key={teacher._id} value={teacher._id}>{teacher.fullName || teacher.username}</option>)}</NativeSelect></Field><Field label="Subjects"><Input value={form.subjects} onChange={(event) => setForm({ ...form, subjects: event.target.value })} /></Field><div className="md:col-span-2"><Field label="Courses"><MultiSelect values={form.courseIds} options={courses.filter((course: any) => course.active)} onChange={(value: string[]) => setForm({ ...form, courseIds: value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId || !form.name} onClick={onSubmit}>Save Class</Button></div>;
+function ClassForm({ form, setForm, schools, teachers, courses, students, editing, onSubmit, onStudentEdit, onStudentDelete, onStudentTransfer }: any) {
+  const [step, setStep] = useState(0);
+  const [pasteText, setPasteText] = useState("");
+  const [manualStudent, setManualStudent] = useState({ fullName: "", rollNumber: "", parentName: "", parentContact: "" });
+  const enrolledStudents = students.filter((student: any) => (student.classSectionIds || []).some((klass: any) => String(klass._id || klass) === String(editing?._id)));
+  const preview = validateStudentRows(form.students || []);
+  const steps = ["Class Information", "Teacher Assignment", "Course Assignment", "Student Enrollment", editing ? "Review & Save" : "Review & Create"];
+  const selectedTeacher = teachers.find((teacher: any) => String(teacher._id) === String(form.classTeacherId));
+  const classDisplayName = form.grade && form.name ? `${form.grade} - ${form.name}` : "New Class";
+
+  const addRows = (rows: any[]) => {
+    const next = validateStudentRows(rows).valid;
+    setForm({ ...form, students: [...(form.students || []), ...next] });
+  };
+
+  const handlePaste = () => {
+    addRows(parseStudentCsvRows(pasteText));
+    setPasteText("");
+  };
+
+  const handleUpload = async (file?: File) => {
+    if (!file) return;
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    if (extension === "xlsx") {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer);
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      addRows(XLSX.utils.sheet_to_json(sheet));
+      return;
+    }
+    const text = await file.text();
+    addRows(parseStudentCsvRows(text));
+  };
+
+  const addManualStudent = () => {
+    const { valid } = validateStudentRows([manualStudent]);
+    if (!valid.length) return toast.error("Complete all student fields");
+    setForm({ ...form, students: [...(form.students || []), valid[0]] });
+    setManualStudent({ fullName: "", rollNumber: "", parentName: "", parentContact: "" });
+  };
+
+  return <div className="space-y-5">
+    <div className="grid gap-2 md:grid-cols-5">{steps.map((label, index) => <button key={label} type="button" onClick={() => setStep(index)} className={`rounded-md border px-3 py-2 text-left text-xs font-medium ${step === index ? "border-slate-950 bg-slate-950 text-white" : "bg-white text-slate-600 dark:bg-slate-900"}`}><span className="block text-[11px] opacity-70">Step {index + 1}</span>{label}</button>)}</div>
+
+    {step === 0 && <div className="grid gap-3 md:grid-cols-2">
+      <Field label="School *"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value, grade: "", classTeacherId: "", teacherIds: [] })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field>
+      <Field label="Grade *"><NativeSelect value={form.grade} onChange={(event) => setForm({ ...form, grade: event.target.value })}><option value="">Select grade</option>{fixedGrades.map((grade) => <option key={grade} value={grade}>{grade}</option>)}</NativeSelect></Field>
+      <Field label="Class Name *"><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value.toUpperCase() })} placeholder="A" /></Field>
+      <Field label="Capacity *"><Input type="number" min={1} value={form.capacity} onChange={(event) => setForm({ ...form, capacity: Number(event.target.value) })} /></Field>
+      <Field label="Status *"><NativeSelect value={form.active ? "active" : "archived"} onChange={(event) => setForm({ ...form, active: event.target.value === "active" })}><option value="active">Active</option><option value="archived">Archived</option></NativeSelect></Field>
+      <Field label="Fee Type"><NativeSelect value={form.feeType || "monthly"} onChange={(event) => setForm({ ...form, feeType: event.target.value })}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option><option value="course-based">Course Based</option><option value="none">No Fee</option></NativeSelect></Field>
+      <Field label="Fee Amount"><Input type="number" min={0} value={form.feeAmount ?? 0} onChange={(event) => setForm({ ...form, feeAmount: Number(event.target.value) })} /></Field>
+      <Field label="Currency"><NativeSelect value={form.currency || "INR"} onChange={(event) => setForm({ ...form, currency: event.target.value })}><option value="INR">INR</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></NativeSelect></Field>
+      <Field label="Fee Due Day"><Input type="number" min={1} max={31} value={form.feeDueDay ?? 5} onChange={(event) => setForm({ ...form, feeDueDay: Number(event.target.value) })} /></Field>
+      <div className="rounded-md border bg-slate-50 p-3 text-sm dark:bg-slate-900"><p className="text-xs text-slate-500">Auto-generated display name</p><p className="mt-1 font-semibold">{classDisplayName}</p></div>
+      <div className="rounded-md border bg-slate-50 p-3 text-sm dark:bg-slate-900"><p className="text-xs text-slate-500">Class fee structure</p><p className="mt-1 font-semibold">{formatCurrency(form.feeAmount, form.currency)} / {String(form.feeType || "monthly").replace("-", " ")}</p><p className="text-xs text-slate-500">Due day {form.feeDueDay || 5}</p></div>
+    </div>}
+
+    {step === 1 && <div className="grid gap-3 md:grid-cols-2">
+      <Field label="Teacher *"><NativeSelect value={form.classTeacherId} onChange={(event) => setForm({ ...form, classTeacherId: event.target.value, teacherIds: event.target.value ? [event.target.value] : [] })}><option value="">Select teacher</option>{teachers.filter((teacher: any) => {
+        if (!form.schoolId) return true;
+        const teacherSchoolIds = (teacher.schoolIds && teacher.schoolIds.map((s: any) => String(s._id || s))) || [];
+        const primary = String(teacher.schoolId?._id || teacher.schoolId || "");
+        return teacherSchoolIds.includes(form.schoolId) || primary === form.schoolId;
+      }).map((teacher: any) => <option key={teacher._id} value={teacher._id}>{teacher.fullName || teacher.username}</option>)}</NativeSelect></Field>
+      <Field label="Subjects"><Input value={form.subjects} onChange={(event) => setForm({ ...form, subjects: event.target.value })} placeholder="Math, Science, Robotics" /></Field>
+      <div className="md:col-span-2 rounded-md border p-4"><p className="text-sm font-medium">{selectedTeacher ? relationName(selectedTeacher) : "No teacher selected"}</p><p className="text-sm text-slate-500">Teacher assignment is required before class creation.</p></div>
+    </div>}
+
+    {step === 2 && <div className="space-y-3">
+      <Field label="Courses"><MultiSelect values={form.courseIds} options={courses.filter((course: any) => course.active)} onChange={(value: string[]) => setForm({ ...form, courseIds: value })} /></Field>
+    </div>}
+
+    {step === 3 && <div className="space-y-4">
+      <div className="rounded-md border p-4">
+        <div className="mb-3 flex items-center gap-2"><FileSpreadsheet className="h-4 w-4" /><p className="font-semibold">Student Enrollment</p></div>
+        <Textarea className="min-h-36 font-mono" value={pasteText} onChange={(event) => setPasteText(event.target.value)} placeholder={"Student Name,Roll Number,Parent Name,Parent Number\nArun Kumar,R001,Ramesh Kumar,9876543201\nKavin Raj,R002,Suresh Raj,9876543202\nDivya Sri,R003,Meena Devi,9876543203"} />
+        <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={!pasteText.trim()} onClick={handlePaste}>Preview Pasted Students</Button><label className="inline-flex h-10 cursor-pointer items-center rounded-md border px-4 text-sm font-medium"><Upload className="mr-2 h-4 w-4" />Upload CSV/XLSX<input type="file" accept=".csv,.xlsx" className="hidden" onChange={(event) => handleUpload(event.target.files?.[0])} /></label></div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4"><Input placeholder="Student Name" value={manualStudent.fullName} onChange={(event) => setManualStudent({ ...manualStudent, fullName: event.target.value })} /><Input placeholder="Roll Number" value={manualStudent.rollNumber} onChange={(event) => setManualStudent({ ...manualStudent, rollNumber: event.target.value })} /><Input placeholder="Parent Name" value={manualStudent.parentName} onChange={(event) => setManualStudent({ ...manualStudent, parentName: event.target.value })} /><Input placeholder="Parent Number" value={manualStudent.parentContact} onChange={(event) => setManualStudent({ ...manualStudent, parentContact: event.target.value })} /><Button type="button" variant="outline" onClick={addManualStudent}>Add Student</Button></div>
+      <div className="grid gap-3 md:grid-cols-2"><MetricLite label="Valid Students" value={preview.valid.length} /><MetricLite label="Invalid Students" value={preview.invalid.length} /></div>
+      <StudentMiniTable rows={preview.valid} emptyText="No new students staged yet." />
+      {editing && <div className="space-y-2"><p className="text-sm font-semibold">Enrolled Students</p><StudentMiniTable rows={enrolledStudents} actions={{ onStudentEdit, onStudentDelete, onStudentTransfer }} /></div>}
+    </div>}
+
+    {step === 4 && <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-4"><MetricLite label="School" value={relationName(schools.find((school: any) => school._id === form.schoolId))} /><MetricLite label="Grade" value={form.grade || "-"} /><MetricLite label="Class" value={classDisplayName} /><MetricLite label="Capacity" value={form.capacity || 0} /><MetricLite label="Teacher" value={selectedTeacher ? relationName(selectedTeacher) : "-"} /><MetricLite label="Courses" value={(form.courseIds || []).length} /><MetricLite label="Class Fee" value={formatCurrency(form.feeAmount, form.currency)} /><MetricLite label="Due Day" value={form.feeDueDay || 5} /><MetricLite label="New Students" value={preview.valid.length} /><MetricLite label="Status" value={form.active ? "Active" : "Archived"} /></div>
+    </div>}
+
+    <div className="flex items-center justify-between border-t pt-4">
+      <Button type="button" variant="outline" disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}>Previous</Button>
+      {step < steps.length - 1 ? <Button type="button" onClick={() => setStep((value) => Math.min(steps.length - 1, value + 1))}>Next</Button> : <Button type="button" disabled={!form.schoolId || !form.grade || !form.name || !form.classTeacherId || !form.capacity} onClick={onSubmit}>{editing ? "Save Class" : "Create Class"}</Button>}
+    </div>
+  </div>;
+}
+
+function StudentMiniTable({ rows, actions, emptyText = "No students found." }: any) {
+  if (!rows.length) return <div className="rounded-md border border-dashed py-8 text-center text-sm text-slate-500">{emptyText}</div>;
+  return <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-50 text-left text-slate-500 dark:bg-slate-900"><tr>{["Student Name", "Roll Number", "Parent Name", "Parent Number", "Attendance", "Fees Status", "Actions"].map((head) => <th key={head} className="px-3 py-2 font-medium">{head}</th>)}</tr></thead><tbody>{rows.map((student: any, index: number) => <tr key={student._id || `${student.rollNumber}-${index}`} className="border-t"><td className="px-3 py-2 font-medium">{student.fullName || student.username}</td><td className="px-3 py-2">{student.rollNumber || "-"}</td><td className="px-3 py-2">{student.parentName || "-"}</td><td className="px-3 py-2">{student.parentContact || "-"}</td><td className="px-3 py-2">{student.attendancePercentage || 0}%</td><td className="px-3 py-2">{feeLabel(student.feeAccount?.status)}</td><td className="px-3 py-2">{actions ? <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => actions.onStudentEdit(student)}>Edit</Button><Button size="sm" variant="outline" onClick={() => actions.onStudentTransfer(student)}>Transfer</Button><Button size="sm" variant="destructive" onClick={() => actions.onStudentDelete(student)}>Delete</Button></div> : <Badge variant="outline">Ready</Badge>}</td></tr>)}</tbody></table></div>;
 }
 
 function FeeForm({ form, setForm, schools, classes, students, onSubmit }: any) {
-  return <div className="grid gap-3 md:grid-cols-2"><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Class"><NativeSelect value={form.classSectionId} onChange={(event) => setForm({ ...form, classSectionId: event.target.value })}><option value="">Select class</option>{classes.map((klass: any) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</NativeSelect></Field><Field label="Student"><NativeSelect value={form.studentId} onChange={(event) => setForm({ ...form, studentId: event.target.value })}><option value="">Select student</option>{students.map((student: any) => <option key={student._id} value={student._id}>{student.fullName || student.username}</option>)}</NativeSelect></Field><Field label="Total"><Input type="number" value={form.totalFees} onChange={(event) => setForm({ ...form, totalFees: event.target.value })} /></Field><Field label="Paid"><Input type="number" value={form.paidAmount} onChange={(event) => setForm({ ...form, paidAmount: event.target.value })} /></Field><Field label="Due Date"><Input type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} /></Field><Button className="md:col-span-2" disabled={!form.schoolId || !form.studentId} onClick={onSubmit}>Save Fee</Button></div>;
+  const selectedClass = classes.find((klass: any) => String(klass._id) === String(form.classSectionId));
+  return <div className="grid gap-3 md:grid-cols-2"><Field label="School"><NativeSelect value={form.schoolId} onChange={(event) => setForm({ ...form, schoolId: event.target.value, classSectionId: "", studentId: "" })}><option value="">Select school</option>{schools.map((school: any) => <option key={school._id} value={school._id}>{school.name}</option>)}</NativeSelect></Field><Field label="Class"><NativeSelect value={form.classSectionId} onChange={(event) => { const klass = classes.find((item: any) => item._id === event.target.value); setForm({ ...form, classSectionId: event.target.value, totalFees: klass?.feeAmount ?? form.totalFees, currency: klass?.currency || form.currency, feeType: klass?.feeType || form.feeType }); }}><option value="">Select class</option>{classes.filter((klass: any) => !form.schoolId || String(klass.schoolId?._id || klass.schoolId) === form.schoolId).map((klass: any) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</NativeSelect></Field><Field label="Student"><NativeSelect value={form.studentId} onChange={(event) => setForm({ ...form, studentId: event.target.value })}><option value="">Select student</option>{students.filter((student: any) => !form.classSectionId || (student.classSectionIds || []).some((klass: any) => String(klass._id || klass) === String(form.classSectionId))).map((student: any) => <option key={student._id} value={student._id}>{student.fullName || student.username}</option>)}</NativeSelect></Field><Field label="Fee Type"><NativeSelect value={form.feeType || "custom"} onChange={(event) => setForm({ ...form, feeType: event.target.value })}><option value="custom">Custom</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option><option value="course-based">Course Based</option></NativeSelect></Field><Field label="Default Class Fee"><Input value={selectedClass ? formatCurrency(selectedClass.feeAmount, selectedClass.currency) : "-"} readOnly /></Field><Field label="Total"><Input type="number" min={0} value={form.totalFees} onChange={(event) => setForm({ ...form, totalFees: event.target.value })} /></Field><Field label="Paid"><Input type="number" min={0} value={form.paidAmount} onChange={(event) => setForm({ ...form, paidAmount: event.target.value })} /></Field><Field label="Currency"><NativeSelect value={form.currency || "INR"} onChange={(event) => setForm({ ...form, currency: event.target.value })}><option value="INR">INR</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></NativeSelect></Field><Field label="Due Date"><Input type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} /></Field><div className="md:col-span-2"><Field label="Notes"><Textarea value={form.notes || ""} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></Field></div><Button className="md:col-span-2" disabled={!form.schoolId || !form.studentId} onClick={onSubmit}>Save Fee</Button></div>;
 }
 
 function NotificationForm({ form, setForm, schools, classes, onSubmit }: any) {

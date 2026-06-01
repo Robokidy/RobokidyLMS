@@ -15,7 +15,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import type { Course } from "@/types";
 
-type Lesson = { _id: string; title: string; courseId?: Course | string; content: string };
+type Lesson = {
+  _id: string;
+  title: string;
+  description?: string;
+  courseId?: Course | string;
+  module?: string;
+  chapter?: string;
+  content: string;
+  duration?: number;
+  difficulty?: string;
+  visibility?: string;
+  gradeLevels?: string[];
+  status?: string;
+  isPublished?: boolean;
+};
 type QuizMap = Record<string, { _id: string; questions: Array<{ question: string; options: string[]; correctAnswer: number }> } | null>;
 type QuizQuestion = { question: string; options: string[]; correctAnswer: number };
 
@@ -30,7 +44,16 @@ export default function AdminContentPage() {
   const [editing, setEditing] = useState<Lesson | null>(null);
   const [quizLesson, setQuizLesson] = useState<Lesson | null>(null);
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [courseId, setCourseId] = useState("");
+  const [module, setModule] = useState("");
+  const [chapter, setChapter] = useState("");
+  const [duration, setDuration] = useState(30);
+  const [difficulty, setDifficulty] = useState("medium");
+  const [visibility, setVisibility] = useState("teachers");
+  const [gradeLevels, setGradeLevels] = useState("");
+  const [status, setStatus] = useState("draft");
+  const [isPublished, setIsPublished] = useState(false);
   const [content, setContent] = useState("");
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
 
@@ -60,7 +83,16 @@ export default function AdminContentPage() {
   const openCreate = () => {
     setEditing(null);
     setTitle("");
+    setDescription("");
     setCourseId(courses.find((course) => course.active)?._id || "");
+    setModule("");
+    setChapter("");
+    setDuration(30);
+    setDifficulty("medium");
+    setVisibility("teachers");
+    setGradeLevels("");
+    setStatus("draft");
+    setIsPublished(false);
     setContent("");
     setOpen(true);
   };
@@ -68,16 +100,41 @@ export default function AdminContentPage() {
   const openEdit = (lesson: Lesson) => {
     setEditing(lesson);
     setTitle(lesson.title);
+    setDescription(lesson.description || "");
     setCourseId(typeof lesson.courseId === "string" ? lesson.courseId : lesson.courseId?._id || "");
+    setModule(lesson.module || "");
+    setChapter(lesson.chapter || "");
+    setDuration(lesson.duration || 30);
+    setDifficulty(lesson.difficulty || "medium");
+    setVisibility(lesson.visibility || "teachers");
+    setGradeLevels((lesson.gradeLevels || []).join(", "));
+    setStatus(lesson.status || "draft");
+    setIsPublished(Boolean(lesson.isPublished));
     setContent(lesson.content);
     setOpen(true);
   };
 
   const saveLesson = async () => {
+    const lessonPayload = {
+      title,
+      description,
+      courseId,
+      module,
+      chapter,
+      content,
+      objectives: [],
+      duration,
+      difficulty,
+      visibility,
+      gradeLevels: gradeLevels.split(",").map((grade) => grade.trim()).filter(Boolean),
+      status,
+      isPublished
+    };
+
     if (editing) {
-      await apiFetch(`/admin/lessons/${editing._id}`, { method: "PUT", body: JSON.stringify({ title, courseId, content, examples: [] }) }, token);
+      await apiFetch(`/admin/lessons/${editing._id}`, { method: "PUT", body: JSON.stringify(lessonPayload) }, token);
     } else {
-      const lesson = await apiFetch(`/admin/lessons`, { method: "POST", body: JSON.stringify({ title, courseId, content, examples: [] }) }, token);
+      const lesson = await apiFetch(`/admin/lessons`, { method: "POST", body: JSON.stringify(lessonPayload) }, token);
       await apiFetch(`/admin/quizzes`, {
         method: "POST",
         body: JSON.stringify({
@@ -232,6 +289,11 @@ export default function AdminContentPage() {
           <CardContent className="space-y-6">
             <div className="space-y-4">
               <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Lesson title" />
+              <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description" />
+              <div className="grid gap-2 md:grid-cols-2">
+                <Input value={module} onChange={(e) => setModule(e.target.value)} placeholder="Module name" />
+                <Input value={chapter} onChange={(e) => setChapter(e.target.value)} placeholder="Chapter name" />
+              </div>
               <Select value={courseId} onValueChange={setCourseId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select course" />
@@ -242,6 +304,52 @@ export default function AdminContentPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Input type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} placeholder="Duration (minutes)" />
+                <Select value={difficulty} onValueChange={setDifficulty}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Difficulty" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="easy">Easy</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="hard">Hard</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Select value={visibility} onValueChange={setVisibility}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Visibility" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="teachers">Teachers only</SelectItem>
+                    <SelectItem value="students">Students</SelectItem>
+                    <SelectItem value="public">Public</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input value={gradeLevels} onChange={(e) => setGradeLevels(e.target.value)} placeholder="Grade levels (comma separated)" />
+              </div>
+              <div className="grid gap-2 md:grid-cols-2 items-center">
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="published">Published</SelectItem>
+                  </SelectContent>
+                </Select>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={isPublished}
+                    onChange={(e) => setIsPublished(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                  />
+                  Publish now
+                </label>
+              </div>
             </div>
             <div className="rounded-3xl border border-slate-200 bg-white/90 p-4 dark:border-slate-800 dark:bg-slate-950/80">
               <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">Lesson content editor</p>
