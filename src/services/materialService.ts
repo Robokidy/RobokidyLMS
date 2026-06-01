@@ -8,6 +8,12 @@ export interface MaterialUploadParams {
   type: MaterialType;
   language: "en" | "ta" | "both";
   fileName?: string;
+  schoolId?: string;
+  grade?: string;
+  classSectionIds?: string[];
+  tags?: string[];
+  status?: string;
+  visibility?: string;
 }
 
 export interface MaterialFilters {
@@ -34,7 +40,8 @@ export class MaterialService {
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.limit) params.append("limit", String(filters.limit));
 
-    return apiFetch(`/admin/materials${params.toString() ? "?" + params.toString() : ""}`, {}, token);
+    const response = await apiFetch(`/materials${params.toString() ? "?" + params.toString() : ""}`, {}, token);
+    return response.data || response;
   }
 
   /**
@@ -48,7 +55,8 @@ export class MaterialService {
     if (filters?.page) params.append("page", String(filters.page));
     if (filters?.limit) params.append("limit", String(filters.limit));
 
-    return apiFetch(`/teacher/materials${params.toString() ? "?" + params.toString() : ""}`, {}, token);
+    const response = await apiFetch(`/materials${params.toString() ? "?" + params.toString() : ""}`, {}, token);
+    return response.data || response;
   }
 
   /**
@@ -68,7 +76,8 @@ export class MaterialService {
    * Get single material by ID
    */
   static async getMaterial(id: string, token: string, role: "admin" | "teacher" | "student" = "student"): Promise<Material> {
-    return apiFetch(`/${role}/materials/${id}`, {}, token);
+    const base = role === "student" ? "/student/materials" : "/materials";
+    return apiFetch(`${base}/${id}`, {}, token);
   }
 
   /**
@@ -80,22 +89,27 @@ export class MaterialService {
     token: string,
     role: "admin" | "teacher" = "admin"
   ): Promise<Material> {
-    const urlParams = new URLSearchParams({
-      title: params.title,
-      description: params.description,
-      courseId: params.courseId,
-      type: params.type,
-      language: params.language,
-      fileName: params.fileName || file.name
-    });
+    const body = new FormData();
+    body.append("file", file);
+    body.append("title", params.title);
+    body.append("description", params.description);
+    body.append("courseId", params.courseId);
+    body.append("type", params.type);
+    body.append("language", params.language);
+    body.append("fileName", params.fileName || file.name);
+    if (params.schoolId) body.append("schoolId", params.schoolId);
+    if (params.grade) body.append("grade", params.grade);
+    if (params.classSectionIds?.length) body.append("classSectionIds", JSON.stringify(params.classSectionIds));
+    if (params.tags?.length) body.append("tags", JSON.stringify(params.tags));
+    if (params.status) body.append("status", params.status);
+    if (params.visibility) body.append("visibility", params.visibility);
 
-    const res = await fetch(`${API_BASE}/${role}/materials?${urlParams.toString()}`, {
+    const res = await fetch(`${API_BASE}/materials/upload`, {
       method: "POST",
       headers: {
-        "Content-Type": file.type || "application/octet-stream",
         Authorization: `Bearer ${token}`
       },
-      body: file
+      body
     });
 
     const data = await res.json();
@@ -112,21 +126,21 @@ export class MaterialService {
     token: string,
     role: "admin" | "teacher" = "admin"
   ): Promise<Material> {
-    return apiFetch(`/${role}/materials/${id}`, { method: "PUT", body: updates }, token);
+    return apiFetch(`/materials/${id}`, { method: "PUT", body: updates }, token);
   }
 
   /**
    * Delete/disable material (admin or teacher)
    */
   static async deleteMaterial(id: string, token: string, role: "admin" | "teacher" = "admin"): Promise<void> {
-    return apiFetch(`/${role}/materials/${id}`, { method: "DELETE" }, token);
+    return apiFetch(`/materials/${id}`, { method: "DELETE" }, token);
   }
 
   /**
    * Bulk operations
    */
   static async deleteMultipleMaterials(ids: string[], token: string, role: "admin" | "teacher" = "admin"): Promise<void> {
-    return apiFetch(`/${role}/materials/bulk-delete`, { method: "POST", body: { ids } }, token);
+    await Promise.all(ids.map((id) => MaterialService.deleteMaterial(id, token, role)));
   }
 
   /**
@@ -138,6 +152,6 @@ export class MaterialService {
     byType: Record<string, number>;
     byLanguage: Record<string, number>;
   }> {
-    return apiFetch(`/${role}/materials/stats`, {}, token);
+    return apiFetch(`/materials/stats`, {}, token);
   }
 }

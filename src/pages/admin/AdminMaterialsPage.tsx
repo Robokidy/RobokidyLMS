@@ -44,10 +44,10 @@ export default function AdminMaterialsPage() {
     setLoading(true);
     const [courseData, materialData] = await Promise.all([
       apiFetch("/admin/courses", {}, token),
-      apiFetch("/admin/materials", {}, token)
+      apiFetch("/materials?limit=100", {}, token)
     ]);
     setCourses(courseData);
-    setMaterials(materialData);
+    setMaterials(materialData.data || materialData);
     if (!form.courseId && courseData[0]) setForm((prev) => ({ ...prev, courseId: courseData[0]._id }));
     setLoading(false);
   };
@@ -56,22 +56,23 @@ export default function AdminMaterialsPage() {
 
   const createMaterial = async () => {
     if (!file) return;
-    const params = new URLSearchParams({
-      title: form.title,
-      description: form.description,
-      courseId: form.courseId,
-      type: form.type,
-      language: form.language,
-      fileName: file.name
-    });
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("title", form.title);
+    formData.append("description", form.description);
+    formData.append("courseId", form.courseId);
+    formData.append("type", form.type);
+    formData.append("language", form.language);
+    formData.append("fileName", file.name);
+    formData.append("status", "published");
+    formData.append("visibility", "students");
 
-    const res = await fetch(`${API_BASE}/admin/materials?${params.toString()}`, {
+    const res = await fetch(`${API_BASE}/materials/upload`, {
       method: "POST",
       headers: {
-        "Content-Type": file.type || "application/octet-stream",
         Authorization: `Bearer ${token}`
       },
-      body: file
+      body: formData
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || "Upload failed");
@@ -83,7 +84,7 @@ export default function AdminMaterialsPage() {
   };
 
   const disableMaterial = async (id: string) => {
-    await apiFetch(`/admin/materials/${id}`, { method: "DELETE" }, token);
+    await apiFetch(`/materials/${id}`, { method: "DELETE" }, token);
     toast({ title: "Material deleted", description: "The file was removed from the repository.", variant: "destructive" });
     setDeletingMaterial(null);
     load();

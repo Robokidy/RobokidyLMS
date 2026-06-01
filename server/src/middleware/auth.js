@@ -14,7 +14,7 @@ const auth = (req, res, next) => {
 
 const loadUser = async (req, res, next) => {
   if (!req.user || !req.user.id) return res.status(401).json({ message: "Missing authenticated user" });
-  const user = await User.findById(req.user.id).select("role active permissions schoolId classSectionIds").lean();
+  const user = await User.findById(req.user.id).select("role active permissions schoolId schoolIds classSectionIds assignedCourses assignedTrackIds grade").lean();
   if (!user || !user.active) return res.status(403).json({ message: "Account is inactive or unavailable" });
   req.authUser = user;
   next();

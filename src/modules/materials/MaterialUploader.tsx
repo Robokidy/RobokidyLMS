@@ -139,15 +139,11 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
     }
 
     try {
-      // Simulate file upload to get path (in real implementation, upload to server/S3)
-      const filePath = `/uploads/materials/${Date.now()}_${selectedFile.name}`;
-
       await onUpload(
         {
           ...formData,
           fileName: selectedFile.name,
           originalName: selectedFile.name,
-          filePath,
           mimeType: selectedFile.type,
           size: selectedFile.size,
         },

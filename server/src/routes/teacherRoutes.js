@@ -456,6 +456,8 @@ router.post("/announcements", requirePermission("messages"), async (req, res) =>
 
 // Teacher Materials APIs - Upload, Update, Delete
 router.post("/materials", requirePermission("materials"), async (req, res) => {
+  return res.status(410).json({ message: "Material uploads now use /api/materials/upload with Cloudinary storage." });
+/*
   try {
     const scope = teacherScope(req);
     const classes = await ClassSection.find({ _id: { $in: scope.classSectionIds } }).select("courseIds").lean();
@@ -493,6 +495,7 @@ router.post("/materials", requirePermission("materials"), async (req, res) => {
     console.error("Material upload error:", error);
     res.status(500).json({ message: error.message || "Upload failed" });
   }
+*/
 });
 
 router.put("/materials/:id", requirePermission("materials"), async (req, res) => {

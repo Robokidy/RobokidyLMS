@@ -7,7 +7,7 @@ const path = require("path");
 const connectDB = require("./config/db");
 
 const requiredEnv = ["MONGODB_URI", "JWT_SECRET"];
-const recommendedEnv = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "NODE_ENV", "JUDGE0_API_KEY"];
+const recommendedEnv = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "NODE_ENV", "JUDGE0_API_KEY", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"];
 for (const name of requiredEnv) {
   if (!process.env[name]) {
     console.error(`Missing required environment variable: ${name}`);
@@ -37,6 +37,7 @@ const teacherRoutes = require("./routes/teacherRoutes");
 const courseTrackRoutes = require("./routes/courseTrackRoutes");
 const contentRoutes = require("./routes/contentRoutes");
 const assessmentRoutes = require("./routes/assessmentRoutes");
+const materialRoutes = require("./routes/materialRoutes");
 
 function optionalRoute(path) {
   try {
@@ -88,7 +89,6 @@ app.use(cors({
 app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json({ limit: "2mb" }));
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRoutes);
@@ -97,6 +97,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/teacher", teacherRoutes);
 app.use("/api/course-tracks", courseTrackRoutes);
 app.use("/api/code", codeRoutes);
+app.use("/api/materials", materialRoutes);
 app.use("/api/content", contentRoutes);
 app.use("/api/assessments", assessmentRoutes);
 if (feeRoutes) app.use("/api/fees", feeRoutes);

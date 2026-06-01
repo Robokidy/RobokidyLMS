@@ -517,65 +517,7 @@ router.get("/materials/:id", async (req, res) => {
  * Create material (with file upload)
  */
 router.post("/materials", async (req, res) => {
-  try {
-    const scope = getUserScope(req.authUser || req.user);
-
-    if (!["admin", "teacher"].includes(scope.role)) {
-      return res.status(403).json({ message: "Insufficient permissions" });
-    }
-
-    const {
-      title,
-      description,
-      courseId,
-      lessonId,
-      type,
-      fileName,
-      originalName,
-      filePath,
-      mimeType,
-      size,
-      tags,
-      visibility,
-      classSectionIds
-    } = req.body;
-
-    if (!title || !courseId || !type || !fileName || !filePath) {
-      return res.status(400).json({ message: "Required fields missing" });
-    }
-
-    const finalSchoolId = scope.role === "admin" ? req.body.schoolId : scope.schoolId;
-    const finalClassSectionIds = scope.role === "admin" 
-      ? (classSectionIds || []) 
-      : classSectionIds ? classSectionIds.filter(id => scope.classSectionIds.includes(String(id))) : [];
-
-    const material = new Material({
-      title: title.trim(),
-      description,
-      courseId,
-      lessonId,
-      type,
-      fileName,
-      originalName,
-      filePath,
-      mimeType,
-      size,
-      tags: tags || [],
-      visibility: visibility || "teachers",
-      schoolId: finalSchoolId,
-      classSectionIds: finalClassSectionIds,
-      isPublished: req.body.isPublished || false,
-      createdBy: scope.userId
-    });
-
-    await material.save();
-    await material.populate("createdBy", "fullName email");
-
-    res.status(201).json(material);
-  } catch (error) {
-    console.error("Error creating material:", error);
-    res.status(500).json({ message: "Failed to create material", error: error.message });
-  }
+  res.status(410).json({ message: "Material file creation has moved to /api/materials/upload with Cloudinary storage." });
 });
 
 /**

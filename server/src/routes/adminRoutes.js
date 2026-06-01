@@ -978,6 +978,8 @@ router.get("/materials", async (req, res) => {
 });
 
 router.post("/materials", express.raw({ type: "*/*", limit: "200mb" }), async (req, res) => {
+  return res.status(410).json({ message: "Material uploads now use /api/materials/upload with Cloudinary storage." });
+/*
   const title = safeText(req.query.title);
   const description = safeText(req.query.description);
   const requestedType = safeText(req.query.type);
@@ -1021,6 +1023,7 @@ router.post("/materials", express.raw({ type: "*/*", limit: "200mb" }), async (r
 
   await ActivityLog.create({ userId: req.user.id, action: "material_created", meta: { materialId: material._id, title } });
   res.status(201).json(await material.populate("courseId", "name slug active"));
+*/
 });
 
 router.put("/materials/:id", async (req, res) => {

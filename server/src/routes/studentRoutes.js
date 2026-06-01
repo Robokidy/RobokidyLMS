@@ -1,10 +1,11 @@
 const express = require("express");
-const fs = require("fs");
+const https = require("https");
 const { auth, requireRole } = require("../middleware/auth");
 const User = require("../models/User");
 const Course = require("../models/Course");
 const Lesson = require("../models/Lesson");
 const Material = require("../models/Material");
+const MaterialAnalytics = require("../models/MaterialAnalytics");
 const Quiz = require("../models/Quiz");
 const StudentProgress = require("../models/StudentProgress");
 const ActivityLog = require("../models/ActivityLog");
@@ -22,7 +23,7 @@ async function getAssignedCourseIds(userId) {
 
 async function getStudentAccess(userId) {
   const user = await User.findById(userId)
-    .select("username assignedCourses assignedTrackIds")
+    .select("username schoolId classSectionIds grade assignedCourses assignedTrackIds")
     .populate("assignedCourses", "name slug active")
     .populate("assignedTrackIds", "trackName trackCode category grade")
     .lean();
@@ -34,7 +35,11 @@ async function getStudentAccess(userId) {
   }));
 
   return {
+    userId: String(user?._id || userId),
     username: user?.username || "",
+    schoolId: user?.schoolId ? String(user.schoolId) : "",
+    classSectionIds: (user?.classSectionIds || []).map(String),
+    grade: user?.grade || "",
     assignedCourses,
     assignedTracks: (user?.assignedTrackIds || []).map((track) => ({
       _id: String(track._id),
@@ -44,6 +49,76 @@ async function getStudentAccess(userId) {
       grade: track.grade
     }))
   };
+}
+
+function studentMaterialFilter(access, id) {
+  const courseIds = access.assignedCourses.map((course) => course._id);
+  const assignmentOr = [
+    { courseId: { $in: courseIds } },
+    { assignments: { $elemMatch: { type: "course", refId: { $in: courseIds } } } },
+    { assignments: { $elemMatch: { type: "student", refId: access.userId } } }
+  ];
+  if (access.schoolId) {
+    assignmentOr.push({ schoolId: access.schoolId });
+    assignmentOr.push({ assignments: { $elemMatch: { type: "school", refId: access.schoolId } } });
+  }
+  if (access.classSectionIds.length) {
+    assignmentOr.push({ classSectionIds: { $in: access.classSectionIds } });
+    assignmentOr.push({ assignments: { $elemMatch: { type: "class", refId: { $in: access.classSectionIds } } } });
+  }
+  if (access.grade) {
+    assignmentOr.push({ grade: access.grade });
+    assignmentOr.push({ assignments: { $elemMatch: { type: "grade", label: access.grade } } });
+  }
+
+  return {
+    ...(id ? { _id: id } : {}),
+    active: true,
+    status: "published",
+    isPublished: true,
+    visibility: { $in: ["students", "public"] },
+    $or: assignmentOr
+  };
+}
+
+function proxyCloudinaryFile(res, material) {
+  const sourceUrl = material.cloudinarySecureUrl;
+  if (!sourceUrl) {
+    res.status(404).json({ message: "Material file not found" });
+    return;
+  }
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(sourceUrl);
+  } catch {
+    res.status(404).json({ message: "Material file not found" });
+    return;
+  }
+  if (parsedUrl.protocol !== "https:") {
+    res.status(403).json({ message: "Only secure material URLs are allowed" });
+    return;
+  }
+
+  https.get(parsedUrl, (cloudRes) => {
+    if (cloudRes.statusCode >= 300 && cloudRes.statusCode < 400 && cloudRes.headers.location) {
+      https.get(cloudRes.headers.location, (redirectRes) => redirectRes.pipe(res)).on("error", () => {
+        res.status(502).json({ message: "Unable to open material file" });
+      });
+      return;
+    }
+    if (cloudRes.statusCode !== 200) {
+      res.status(404).json({ message: "Material file not found" });
+      cloudRes.resume();
+      return;
+    }
+    res.setHeader("Content-Type", material.mimeType || cloudRes.headers["content-type"] || "application/octet-stream");
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(material.originalName || "material")}"`);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    cloudRes.pipe(res);
+  }).on("error", () => {
+    res.status(502).json({ message: "Unable to open material file" });
+  });
 }
 
 async function hasPythonCourse(userId) {
@@ -117,13 +192,8 @@ router.get("/lessons/:id", async (req, res) => {
 
 router.get("/materials", async (req, res) => {
   const access = await getStudentAccess(req.user.id);
-  if (!access.assignedCourses.length) return res.json([]);
-
-  const materials = await Material.find({
-    active: true,
-    courseId: { $in: access.assignedCourses }
-  })
-    .select("title description courseId type originalName mimeType size language active createdAt")
+  const materials = await Material.find(studentMaterialFilter(access))
+    .select("title description courseId type originalName mimeType size language active status thumbnailUrl createdAt")
     .populate("courseId", "name slug")
     .sort({ createdAt: -1 })
     .lean();
@@ -133,14 +203,8 @@ router.get("/materials", async (req, res) => {
 
 router.get("/materials/:id", async (req, res) => {
   const access = await getStudentAccess(req.user.id);
-  if (!access.assignedCourses.length) return res.status(403).json({ message: "No courses assigned" });
-
-  const material = await Material.findOne({
-    _id: req.params.id,
-    active: true,
-    courseId: { $in: access.assignedCourses }
-  })
-    .select("title description courseId type originalName mimeType size language active createdAt")
+  const material = await Material.findOne(studentMaterialFilter(access, req.params.id))
+    .select("title description courseId type originalName mimeType size language active status createdAt")
     .populate("courseId", "name slug")
     .lean();
 
@@ -159,7 +223,29 @@ router.get("/materials/:id", async (req, res) => {
     progress.materialViews.push({ materialId: material._id, viewCount: 1, lastViewedAt: new Date() });
   }
   await progress.save();
-  await ActivityLog.create({ userId: req.user.id, action: "material_viewed", meta: { materialId: material._id, title: material.title } });
+  await Promise.all([
+    Material.updateOne(
+      { _id: material._id },
+      {
+        $inc: { viewCount: 1 },
+        $addToSet: { uniqueViewers: req.user.id },
+        $set: { lastViewedAt: new Date() }
+      }
+    ),
+    MaterialAnalytics.findOneAndUpdate(
+      { materialId: material._id, studentId: req.user.id },
+      {
+        $set: {
+          viewedAt: new Date(),
+          schoolId: access.schoolId || undefined,
+          classSectionId: access.classSectionIds[0] || undefined
+        },
+        $inc: { sessionCount: 1 }
+      },
+      { upsert: true, new: true }
+    ),
+    ActivityLog.create({ userId: req.user.id, action: "material_viewed", meta: { materialId: material._id, title: material.title } })
+  ]);
 
   res.json({
     ...material,
@@ -175,21 +261,9 @@ router.get("/materials/:id", async (req, res) => {
 
 router.get("/materials/:id/file", async (req, res) => {
   const access = await getStudentAccess(req.user.id);
-  if (!access.assignedCourses.length) return res.status(403).json({ message: "No courses assigned" });
-
-  const material = await Material.findOne({
-    _id: req.params.id,
-    active: true,
-    courseId: { $in: access.assignedCourses }
-  }).lean();
-
-  if (!material || !fs.existsSync(material.filePath)) return res.status(404).json({ message: "Material file not found" });
-
-  res.setHeader("Content-Type", material.mimeType);
-  res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(material.originalName)}"`);
-  res.setHeader("Cache-Control", "no-store, private");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  fs.createReadStream(material.filePath).pipe(res);
+  const material = await Material.findOne(studentMaterialFilter(access, req.params.id)).lean();
+  if (!material) return res.status(404).json({ message: "Material file not found" });
+  proxyCloudinaryFile(res, material);
 });
 
 router.post("/lessons/:id/complete", async (req, res) => {

@@ -80,9 +80,13 @@ export const UnifiedMaterialsPage: React.FC<{
   // Handle upload
   const handleUploadMaterial = async (data: any, file: File) => {
     try {
-      // In a real implementation, upload the file first
-      // For now, we'll just create the material record
-      await MaterialService.create(data, token);
+      const formData = new FormData();
+      formData.append("file", file);
+      Object.entries(data).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === "") return;
+        formData.append(key, Array.isArray(value) ? JSON.stringify(value) : String(value));
+      });
+      await MaterialService.create(formData, token);
       toast({ title: "Success", description: "Material uploaded successfully" });
       setUploaderOpen(false);
       await loadData();

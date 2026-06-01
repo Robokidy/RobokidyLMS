@@ -46,7 +46,7 @@ export type Grade =
   | "grade8"
   | "grade9"
   | "grade10";
-export type MaterialType = "pdf" | "book" | "notes" | "video" | "worksheet" | "presentation" | "zip" | "image" | "code" | "other";
+export type MaterialType = "pdf" | "book" | "notes" | "video" | "audio" | "doc" | "worksheet" | "presentation" | "zip" | "image" | "code" | "other";
 export type Material = {
   _id: string;
   title: string;
@@ -61,6 +61,10 @@ export type Material = {
   size?: number;
   language: "en" | "ta" | "both";
   active: boolean;
+  status?: "draft" | "published" | "archived";
+  thumbnailUrl?: string;
+  viewCount?: number;
+  downloadCount?: number;
   createdAt: string;
   viewer?: {
     disableDownload: boolean;

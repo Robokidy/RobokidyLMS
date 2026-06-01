@@ -118,44 +118,44 @@ export const MaterialService = {
     if (filters.page) params.append("page", String(filters.page));
     if (filters.limit) params.append("limit", String(filters.limit || 20));
 
-    return apiFetch(`/content/materials?${params.toString()}`, {}, token);
+    return apiFetch(`/materials?${params.toString()}`, {}, token);
   },
 
   /**
    * Get single material
    */
   async getById(id: string, token: string): Promise<any> {
-    return apiFetch(`/content/materials/${id}`, {}, token);
+    return apiFetch(`/materials/${id}`, {}, token);
   },
 
   /**
    * Create material
    */
   async create(data: any, token: string): Promise<any> {
-    return apiFetch(`/content/materials`, { method: "POST", body: data }, token);
+    return apiFetch(`/materials/upload`, { method: "POST", body: data }, token);
   },
 
   /**
    * Update material
    */
   async update(id: string, data: any, token: string): Promise<any> {
-    return apiFetch(`/content/materials/${id}`, { method: "PUT", body: data }, token);
+    return apiFetch(`/materials/${id}`, { method: "PUT", body: data }, token);
   },
 
   /**
    * Delete material
    */
   async delete(id: string, token: string): Promise<void> {
-    return apiFetch(`/content/materials/${id}`, { method: "DELETE" }, token);
+    return apiFetch(`/materials/${id}`, { method: "DELETE" }, token);
   },
 
   /**
    * Publish material
    */
   async publish(id: string, token: string): Promise<any> {
-    return apiFetch(`/content/materials/${id}`, {
+    return apiFetch(`/materials/${id}`, {
       method: "PUT",
-      body: { isPublished: true }
+      body: { isPublished: true, status: "published" }
     }, token);
   },
 
@@ -163,9 +163,9 @@ export const MaterialService = {
    * Unpublish material
    */
   async unpublish(id: string, token: string): Promise<any> {
-    return apiFetch(`/content/materials/${id}`, {
+    return apiFetch(`/materials/${id}`, {
       method: "PUT",
-      body: { isPublished: false }
+      body: { isPublished: false, status: "draft" }
     }, token);
   }
 };
