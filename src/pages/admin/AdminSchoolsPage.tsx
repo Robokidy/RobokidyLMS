@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
-import { Archive, Bell, Building2, CalendarCheck, CheckCircle2, CreditCard, Download, Edit3, Eye, FileSpreadsheet, GraduationCap, LayoutGrid, Mail, MessageSquare, Phone, Plus, Search, Settings, ShieldCheck, Table2, Upload, UserRound, Users } from "lucide-react";
+import { Bell, Building2, CalendarCheck, CheckCircle2, CreditCard, Download, Edit3, Eye, FileSpreadsheet, GraduationCap, LayoutGrid, Mail, MessageSquare, Phone, Plus, Search, Settings, ShieldCheck, Table2, Trash2, Upload, UserRound, Users } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import * as XLSX from "xlsx";
 import { apiFetch } from "@/api/client";
@@ -104,11 +104,13 @@ function validateStudentRows(rows: any[]) {
   };
 }
 
-export default function AdminSchoolsPage() {
-  const { token } = useAuth();
+export default function AdminSchoolsPage({ mode = "admin" }: { mode?: "admin" | "teacher" }) {
+  const { token, user } = useAuth();
   const location = useLocation();
   const page = location.pathname.split("/").pop() || "schools";
   const pageKey = ["teachers", "classes", "students", "fees", "attendance", "notifications", "settings"].includes(page) ? page : "schools";
+  const isTeacherMode = mode === "teacher" || user?.role === "teacher";
+  const apiBase = isTeacherMode ? "/teacher" : "/admin";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -142,14 +144,14 @@ export default function AdminSchoolsPage() {
     setLoading(true);
     try {
       const [schoolsData, teachersData, classesData, studentsData, coursesData, feesData, attendanceData, notificationData] = await Promise.all([
-        apiFetch("/admin/schools", {}, token),
-        apiFetch("/admin/teachers", {}, token),
-        apiFetch("/admin/classes", {}, token),
-        apiFetch("/admin/students", {}, token),
-        apiFetch("/admin/courses", {}, token),
-        apiFetch("/admin/fees", {}, token),
-        apiFetch("/admin/attendance", {}, token),
-        apiFetch("/admin/notifications", {}, token)
+        apiFetch(`${apiBase}/schools`, {}, token),
+        apiFetch(`${apiBase}/teachers`, {}, token),
+        apiFetch(`${apiBase}/classes`, {}, token),
+        apiFetch(`${apiBase}/students`, {}, token),
+        apiFetch(`${apiBase}/courses`, {}, token),
+        apiFetch(`${apiBase}/fees`, {}, token),
+        apiFetch(`${apiBase}/attendance`, {}, token),
+        apiFetch(`${apiBase}/notifications`, {}, token)
       ]);
       setSchools(schoolsData || []);
       setTeachers(teachersData || []);
@@ -242,18 +244,25 @@ export default function AdminSchoolsPage() {
 
   const submit = async (kind: string) => {
     try {
-      if (kind === "school") await apiFetch(editing ? `/admin/schools/${editing._id}` : "/admin/schools", { method: editing ? "PUT" : "POST", body: schoolForm }, token);
+      if (kind === "school") {
+        if (isTeacherMode) return toast.error("Teachers can view assigned schools but cannot create or edit schools");
+        await apiFetch(editing ? `/admin/schools/${editing._id}` : "/admin/schools", { method: editing ? "PUT" : "POST", body: schoolForm }, token);
+      }
       if (kind === "teacher") {
+        if (isTeacherMode) return toast.error("Teachers cannot create or edit other teachers");
         const res = await apiFetch(editing ? `/admin/teachers/${editing._id}` : "/admin/teachers", { method: editing ? "PUT" : "POST", body: { ...teacherForm, subjects: splitList(teacherForm.subjects) } }, token);
         if (res.tempPassword) setCredential(`${res.username} temporary password: ${res.tempPassword}`);
       }
       if (kind === "student") {
-        const res = await apiFetch(editing ? `/admin/students/${editing._id}` : "/admin/students", { method: editing ? "PUT" : "POST", body: studentForm }, token);
+        const res = await apiFetch(editing ? `${apiBase}/students/${editing._id}` : `${apiBase}/students`, { method: editing ? "PUT" : "POST", body: studentForm }, token);
         if (res.tempPassword) setCredential(`${res.username} temporary password: ${res.tempPassword}`);
       }
-      if (kind === "class") await apiFetch(editing ? `/admin/classes/${editing._id}` : "/admin/classes", { method: editing ? "PUT" : "POST", body: { ...classForm, section: classForm.name || classForm.section, name: classForm.grade && classForm.name ? `${classForm.grade} - ${classForm.name}` : classForm.name, teacherIds: classForm.classTeacherId ? [classForm.classTeacherId] : classForm.teacherIds, subjects: splitList(classForm.subjects), codingTracks: splitList(classForm.codingTracks) } }, token);
-      if (kind === "fee") await apiFetch(editing ? `/admin/fees/${editing._id}` : "/admin/fees", { method: editing ? "PUT" : "POST", body: feeForm }, token);
-      if (kind === "notification") await apiFetch(editing ? `/admin/notifications/${editing._id}` : "/admin/notifications", { method: editing ? "PUT" : "POST", body: notificationForm }, token);
+      if (kind === "class") {
+        const teacherIds = Array.from(new Set([...(classForm.teacherIds || []), classForm.classTeacherId].filter(Boolean)));
+        await apiFetch(editing ? `${apiBase}/classes/${editing._id}` : `${apiBase}/classes`, { method: editing ? "PUT" : "POST", body: { ...classForm, section: classForm.name || classForm.section, name: classForm.grade && classForm.name ? `${classForm.grade} - ${classForm.name}` : classForm.name, teacherIds, classTeacherId: classForm.classTeacherId || teacherIds[0], subjects: splitList(classForm.subjects), codingTracks: splitList(classForm.codingTracks) } }, token);
+      }
+      if (kind === "fee") await apiFetch(editing ? `${apiBase}/fees/${editing._id}` : `${apiBase}/fees`, { method: editing ? "PUT" : "POST", body: feeForm }, token);
+      if (kind === "notification") await apiFetch(editing ? `${apiBase}/notifications/${editing._id}` : `${apiBase}/notifications`, { method: editing ? "PUT" : "POST", body: notificationForm }, token);
       toast.success(`${kind} saved`);
       setDialog("");
       setEditing(null);
@@ -273,9 +282,9 @@ export default function AdminSchoolsPage() {
         const amount = Number(value);
         if (!Number.isFinite(amount) || amount <= 0) return toast.error("Enter a valid payment amount");
         if (current._id) {
-          await apiFetch(`/admin/fees/${current._id}/payments`, { method: "POST", body: { amount, paymentDate: new Date().toISOString().slice(0, 10) } }, token);
+          await apiFetch(`${apiBase}/fees/${current._id}/payments`, { method: "POST", body: { amount, paymentDate: new Date().toISOString().slice(0, 10) } }, token);
         } else {
-          await apiFetch(`/admin/students/${student._id}/fees`, {
+          await apiFetch(`${apiBase}/students/${student._id}/fees`, {
             method: "PUT",
             body: {
               status,
@@ -292,14 +301,18 @@ export default function AdminSchoolsPage() {
         load();
         return;
       }
-      await apiFetch(`/admin/students/${student._id}/fees`, {
+      await apiFetch(`${apiBase}/students/${student._id}/fees`, {
         method: "PUT",
         body: {
           status,
           schoolId: student.schoolId?._id || student.schoolId,
           classSectionId: student.classSectionIds?.[0]?._id || student.classSectionIds?.[0],
           totalFees: current.totalFees || 0,
-          paidAmount: current.paidAmount || 0
+          paidAmount: status === "paid"
+            ? (current.totalFees || student.feeAmount || 0)
+            : status === "pending"
+              ? 0
+              : (current.paidAmount || 0)
         }
       }, token);
       toast.success("Fee status updated");
@@ -317,15 +330,15 @@ export default function AdminSchoolsPage() {
 
   const markAttendance = async () => {
     const records = Object.entries(attendanceForm.records).map(([studentId, status]) => ({ studentId, status }));
-    await apiFetch("/admin/attendance", { method: "POST", body: { classSectionId: attendanceForm.classSectionId, date: attendanceForm.date, records } }, token);
+    await apiFetch(`${apiBase}/attendance`, { method: "POST", body: { classSectionId: attendanceForm.classSectionId, date: attendanceForm.date, records } }, token);
     toast.success("Attendance saved");
     load();
   };
 
-  const actionButton = pageKey === "schools" ? ["New School", "school"] : pageKey === "teachers" ? ["New Teacher", "teacher"] : pageKey === "students" ? ["New Student", "student"] : pageKey === "classes" ? ["New Class", "class"] : pageKey === "fees" ? ["Add Fee", "fee"] : pageKey === "notifications" ? ["New Message", "notification"] : null;
+  const actionButton = pageKey === "schools" ? (isTeacherMode ? null : ["New School", "school"]) : pageKey === "teachers" ? (isTeacherMode ? null : ["New Teacher", "teacher"]) : pageKey === "students" ? ["New Student", "student"] : pageKey === "classes" ? ["New Class", "class"] : pageKey === "fees" ? ["Add Fee", "fee"] : pageKey === "notifications" ? ["New Message", "notification"] : null;
 
-  return (
-    <AdminShell title={titleMap[pageKey][0]} subtitle={titleMap[pageKey][1]}>
+  const content = (
+    <>
       {error && <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       {credential && <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800">{credential}</div>}
 
@@ -375,13 +388,13 @@ export default function AdminSchoolsPage() {
 
       {loading ? <SkeletonGrid /> : (
         <>
-          {pageKey === "schools" && <SchoolsView rows={filteredSchools} teachers={teachers} classes={classes} students={students} onView={setViewing} onEdit={(row: any) => openEdit("school", row)} onArchive={(row: any) => archive(`/admin/schools/${row._id}`)} />}
-          {pageKey === "teachers" && <TeachersView rows={filteredTeachers} students={students} onView={setViewing} onEdit={(row: any) => openEdit("teacher", row)} onArchive={(row: any) => archive(`/admin/teachers/${row._id}`)} />}
-          {pageKey === "students" && <StudentsView rows={filteredStudents} view={studentView} onView={setViewing} onEdit={(row: any) => openEdit("student", row)} onArchive={(row: any) => archive(`/admin/students/${row._id}`)} onFeeChange={updateStudentFee} />}
-          {pageKey === "classes" && <ClassesView rows={filteredClasses} students={students} onView={setViewing} onEdit={(row: any) => openEdit("class", row)} onArchive={(row: any) => archive(`/admin/classes/${row._id}`)} />}
+          {pageKey === "schools" && <SchoolsView rows={filteredSchools} teachers={teachers} classes={classes} students={students} onView={setViewing} onEdit={(row: any) => !isTeacherMode && openEdit("school", row)} onArchive={(row: any) => !isTeacherMode && archive(`/admin/schools/${row._id}`)} />}
+          {pageKey === "teachers" && <TeachersView rows={filteredTeachers} students={students} onView={setViewing} onEdit={(row: any) => !isTeacherMode && openEdit("teacher", row)} onArchive={(row: any) => !isTeacherMode && archive(`/admin/teachers/${row._id}`)} />}
+          {pageKey === "students" && <StudentsView rows={filteredStudents} view={studentView} onView={setViewing} onEdit={(row: any) => openEdit("student", row)} onArchive={(row: any) => archive(`${apiBase}/students/${row._id}`)} onFeeChange={updateStudentFee} />}
+          {pageKey === "classes" && <ClassesView rows={filteredClasses} students={students} onView={setViewing} onEdit={(row: any) => openEdit("class", row)} onArchive={(row: any) => archive(`${apiBase}/classes/${row._id}`)} />}
           {pageKey === "fees" && <FeesView rows={filteredFees} />}
           {pageKey === "attendance" && <AttendanceView classes={classes} students={selectedClassStudents} attendance={attendance} form={attendanceForm} setForm={setAttendanceForm} onSave={markAttendance} />}
-          {pageKey === "notifications" && <NotificationsView rows={filteredNotifications} onEdit={(row: any) => openEdit("notification", row)} onArchive={(row: any) => archive(`/admin/notifications/${row._id}`)} />}
+          {pageKey === "notifications" && <NotificationsView rows={filteredNotifications} onEdit={(row: any) => openEdit("notification", row)} onArchive={(row: any) => archive(`${apiBase}/notifications/${row._id}`)} />}
           {pageKey === "settings" && <SettingsView />}
         </>
       )}
@@ -399,17 +412,20 @@ export default function AdminSchoolsPage() {
           {dialog === "school" && <SchoolForm form={schoolForm} setForm={setSchoolForm} onSubmit={() => submit("school")} />}
           {dialog === "teacher" && <TeacherForm form={teacherForm} setForm={setTeacherForm} schools={schools} classes={classes} onSubmit={() => submit("teacher")} />}
           {dialog === "student" && <StudentForm form={studentForm} setForm={setStudentForm} schools={schools} classes={classes} courses={courses} onSubmit={() => submit("student")} />}
-          {dialog === "class" && <ClassForm form={classForm} setForm={setClassForm} schools={schools} teachers={teachers} courses={courses} students={students} editing={editing} onSubmit={() => submit("class")} onStudentEdit={(row: any) => openEdit("student", row)} onStudentDelete={(row: any) => archive(`/admin/students/${row._id}`)} onStudentTransfer={(row: any) => openEdit("student", row)} />}
+          {dialog === "class" && <ClassForm form={classForm} setForm={setClassForm} schools={schools} teachers={teachers} courses={courses} students={students} editing={editing} onSubmit={() => submit("class")} onStudentEdit={(row: any) => openEdit("student", row)} onStudentDelete={(row: any) => archive(`${apiBase}/students/${row._id}`)} onStudentTransfer={(row: any) => openEdit("student", row)} />}
           {dialog === "fee" && <FeeForm form={feeForm} setForm={setFeeForm} schools={schools} classes={classes} students={students} onSubmit={() => submit("fee")} />}
           {dialog === "notification" && <NotificationForm form={notificationForm} setForm={setNotificationForm} schools={schools} classes={classes} onSubmit={() => submit("notification")} />}
         </DialogContent>
       </Dialog>
-    </AdminShell>
+    </>
   );
+
+  if (isTeacherMode) return <div>{content}</div>;
+  return <AdminShell title={titleMap[pageKey][0]} subtitle={titleMap[pageKey][1]}>{content}</AdminShell>;
 }
 
 function CardActions({ onView, onEdit, onArchive }: any) {
-  return <div className="flex gap-2"><Button size="sm" variant="outline" onClick={onView}><Eye className="mr-1 h-4 w-4" />View</Button><Button size="sm" variant="outline" onClick={onEdit}><Edit3 className="mr-1 h-4 w-4" />Edit</Button><Button size="sm" variant="destructive" onClick={onArchive}><Archive className="mr-1 h-4 w-4" />Archive</Button></div>;
+  return <div className="flex gap-2"><Button size="sm" variant="outline" onClick={onView}><Eye className="mr-1 h-4 w-4" />View</Button><Button size="sm" variant="outline" onClick={onEdit}><Edit3 className="mr-1 h-4 w-4" />Edit</Button><Button size="sm" variant="destructive" onClick={onArchive}><Trash2 className="mr-1 h-4 w-4" />Delete</Button></div>;
 }
 
 function SchoolsView({ rows, onView, onEdit, onArchive }: any) {

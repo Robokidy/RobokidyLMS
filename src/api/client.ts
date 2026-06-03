@@ -1,8 +1,10 @@
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 const trimLeadingSlash = (value: string) => value.replace(/^\/+/, "");
 
-export const API_ROOT = trimTrailingSlash(import.meta.env.VITE_API_URL || "http://localhost:5000");
-export const API_BASE = API_ROOT.endsWith("/api") ? API_ROOT : `${API_ROOT}/api`;
+import { API_BASE_URL, API_ROOT as CONFIGURED_API_ROOT } from "./api";
+
+export const API_ROOT = CONFIGURED_API_ROOT;
+export const API_BASE = trimTrailingSlash(API_BASE_URL);
 export const baseURL = API_BASE;
 
 export function apiUrl(path: string) {

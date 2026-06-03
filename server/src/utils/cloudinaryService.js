@@ -49,7 +49,11 @@ function getResourceType(mimeType = "") {
  * @param {string} originalName - Original filename for display
  * @returns {Promise<object>} Cloudinary upload result
  */
-async function uploadFile(buffer, mimeType, originalName) {
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function uploadStreamOnce(buffer, mimeType, originalName) {
   const folder = getFolderFromMime(mimeType);
   const resourceType = getResourceType(mimeType);
 
@@ -70,6 +74,24 @@ async function uploadFile(buffer, mimeType, originalName) {
     );
     uploadStream.end(buffer);
   });
+}
+
+async function uploadFile(buffer, mimeType, originalName, options = {}) {
+  const maxAttempts = options.maxAttempts || 3;
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await uploadStreamOnce(buffer, mimeType, originalName);
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) {
+        await wait(750 * attempt);
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 async function replaceFile(oldPublicId, oldResourceType, buffer, mimeType, originalName) {

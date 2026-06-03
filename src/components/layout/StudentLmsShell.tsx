@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Bell, BookOpen, Code, FileText, GraduationCap, LogOut, ShieldCheck } from "lucide-react";
+import { Bell, BookOpen, Code, GraduationCap, LogOut, ShieldCheck, Users } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
 import DarkModeToggle from "@/components/layout/DarkModeToggle";
@@ -8,7 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getStudentNavItems, studentDefaultModules } from "@/lib/studentNav";
 
-type Stats = { totalLessons: number; completedLessons: number; quizAttempts: number; codeRunCount: number };
+type Stats = {
+  totalLessons: number;
+  completedLessons: number;
+  quizAttempts: number;
+  codeRunCount: number;
+  studentProfile?: {
+    grade?: string;
+    className?: string;
+    teacherNames?: string[];
+  };
+};
 
 const gradeLabels: Record<string, string> = {
   grade1: "Grade 1",
@@ -23,7 +33,12 @@ const gradeLabels: Record<string, string> = {
   grade10: "Grade 10"
 };
 
-export default function StudentLmsShell({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+function displayGrade(value?: string) {
+  if (!value) return "-";
+  return gradeLabels[value] || value;
+}
+
+export default function StudentLmsShell({ title = "Student Workspace", subtitle = "Your learning dashboard and assigned activities.", children }: { title?: string; subtitle?: string; children: ReactNode }) {
   const { token, user, logout } = useAuth();
   const location = useLocation();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -48,7 +63,10 @@ export default function StudentLmsShell({ title, subtitle, children }: { title: 
   }, [token]);
 
   const completion = stats?.totalLessons ? Math.round(((stats.completedLessons || 0) / stats.totalLessons) * 100) : 0;
-  const currentGrade = gradeLabels[user?.grade || "grade1"] || "Grade 1";
+  const profile = stats?.studentProfile;
+  const currentGrade = displayGrade(profile?.grade || user?.grade);
+  const currentClass = profile?.className || "-";
+  const currentTeacher = profile?.teacherNames?.length ? profile.teacherNames.join(", ") : "-";
 
   return (
     <div className="relative min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-50">
@@ -93,7 +111,7 @@ export default function StudentLmsShell({ title, subtitle, children }: { title: 
               </div>
               <div>
                 <p className="text-xs font-semibold leading-tight">{user?.username}</p>
-                <p className="text-[11px] text-slate-500">{currentGrade}</p>
+                <p className="max-w-32 truncate text-[11px] text-slate-500">{currentGrade} - {currentClass}</p>
               </div>
             </div>
             <Button variant="outline" size="icon" className="rounded-full bg-white/70 dark:bg-slate-900/70">
@@ -129,6 +147,9 @@ export default function StudentLmsShell({ title, subtitle, children }: { title: 
 
         <div className="mb-6 grid gap-4 md:grid-cols-4">
           {[
+            { label: "Grade", value: currentGrade, icon: GraduationCap },
+            { label: "Class", value: currentClass, icon: Users },
+            { label: "Teacher", value: currentTeacher, icon: ShieldCheck },
             { label: "Lessons", value: stats?.totalLessons ?? "-", icon: BookOpen },
             { label: "Completed", value: stats?.completedLessons ?? "-", icon: ShieldCheck },
             { label: "Quiz Attempts", value: stats?.quizAttempts ?? "-", icon: GraduationCap },
@@ -139,7 +160,7 @@ export default function StudentLmsShell({ title, subtitle, children }: { title: 
               <Card key={item.label} className="border-white/60 bg-white/80 shadow-lg shadow-slate-200/50 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/70 dark:shadow-none">
                 <CardContent className="p-5">
                   <Icon className="mb-3 h-5 w-5 text-cyan-600" />
-                  <p className="text-2xl font-bold">{item.value}</p>
+                  <p className="truncate text-2xl font-bold" title={String(item.value)}>{item.value}</p>
                   <p className="text-xs text-slate-500">{item.label}</p>
                 </CardContent>
               </Card>

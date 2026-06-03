@@ -1,4 +1,5 @@
 const express = require("express");
+const https = require("https");
 const multer = require("multer");
 const { auth, loadUser } = require("../middleware/auth");
 const Material = require("../models/Material");
@@ -94,34 +95,18 @@ function normalizeAssignments(assignments, scope) {
 
 function canViewMaterial(scope, material) {
     if (scope.role === "admin") return true;
-    if (scope.role === "teacher") {
-        // Teacher can view if: created by self, or same school
-        if (String(material.createdBy) === String(scope.userId)) return true;
-        if (material.schoolId && String(material.schoolId) === String(scope.schoolId)) return true;
-        // Also if any classSectionId overlaps
-        const matClasses = (material.classSectionIds || []).map(String);
-        if (scope.classSectionIds.some((id) => matClasses.includes(id))) return true;
-        return false;
-    }
+    if (scope.role === "teacher") return true;
     return false;
 }
 
 function canEditMaterial(scope, material) {
     if (scope.role === "admin") return true;
-    if (scope.role === "teacher") return String(material.createdBy) === String(scope.userId);
+    if (scope.role === "teacher") return true;
     return false;
 }
 
 function buildListFilter(scope, query) {
     const filter = { active: true };
-
-    if (scope.role === "teacher") {
-        filter.$or = [
-            { createdBy: scope.userId },
-            { schoolId: scope.schoolId },
-            { classSectionIds: { $in: scope.classSectionIds } }
-        ];
-    }
 
     if (query.search) filter.$text = { $search: query.search };
     if (query.type) filter.type = query.type;
@@ -155,6 +140,38 @@ function mimeToType(mimeType = "") {
     ) return "worksheet";
     if (mimeType.includes("zip")) return "zip";
     return "other";
+}
+
+function proxyCloudinaryFile(res, material) {
+    const sourceUrl = material.cloudinarySecureUrl;
+    if (!sourceUrl) {
+        res.status(404).json({ message: "Material file not found" });
+        return;
+    }
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(sourceUrl);
+    } catch {
+        res.status(404).json({ message: "Material file not found" });
+        return;
+    }
+    if (parsedUrl.protocol !== "https:") {
+        res.status(403).json({ message: "Only secure material URLs are allowed" });
+        return;
+    }
+    https.get(parsedUrl, (cloudRes) => {
+        if (cloudRes.statusCode >= 300 && cloudRes.statusCode < 400 && cloudRes.headers.location) {
+            https.get(cloudRes.headers.location, (redirectRes) => redirectRes.pipe(res)).on("error", () => {
+                res.status(502).json({ message: "Unable to open material file" });
+            });
+            return;
+        }
+        res.setHeader("Content-Type", material.mimeType || cloudRes.headers["content-type"] || "application/octet-stream");
+        res.setHeader("Cache-Control", "no-store");
+        cloudRes.pipe(res);
+    }).on("error", () => {
+        res.status(502).json({ message: "Unable to open material file" });
+    });
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -308,9 +325,7 @@ router.get("/stats", async (req, res) => {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        const filter = scope.role === "teacher"
-            ? { active: true, $or: [{ createdBy: scope.userId }, { schoolId: scope.schoolId }] }
-            : { active: true };
+        const filter = { active: true };
 
         const [typeAgg, statusAgg, totalViews] = await Promise.all([
             Material.aggregate([{ $match: filter }, { $group: { _id: "$type", count: { $sum: 1 } } }]),
@@ -356,10 +371,34 @@ router.get("/:id", async (req, res) => {
         if (!material) return res.status(404).json({ message: "Material not found" });
         if (!canViewMaterial(scope, material)) return res.status(403).json({ message: "Access denied" });
 
-        res.json(material);
+        res.json({
+            ...material.toObject(),
+            fileUrl: `/api/materials/${material._id}/file`,
+            viewer: {
+                disableDownload: true,
+                disablePrint: true,
+                disableCopy: true,
+                watermark: `${req.authUser?.username || req.user?.username || scope.role} | protected`
+            }
+        });
     } catch (error) {
         console.error("Material fetch error:", error);
         res.status(500).json({ message: "Failed to fetch material", error: error.message });
+    }
+});
+
+router.get("/:id/file", async (req, res) => {
+    try {
+        const scope = getUserScope(req.authUser || req.user);
+        if (!["admin", "teacher"].includes(scope.role)) {
+            return res.status(403).json({ message: "Access denied" });
+        }
+        const material = await Material.findOne({ _id: req.params.id, active: true }).lean();
+        if (!material) return res.status(404).json({ message: "Material file not found" });
+        if (!canViewMaterial(scope, material)) return res.status(403).json({ message: "Access denied" });
+        proxyCloudinaryFile(res, material);
+    } catch (error) {
+        res.status(500).json({ message: "Failed to open material file", error: error.message });
     }
 });
 

@@ -18,13 +18,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Upload, X, FileText, Music, Archive, Code, Plus } from "lucide-react";
 
 export interface MaterialUploaderProps {
   courses: any[];
   lessons?: any[];
+  schools?: any[];
   classSections?: any[];
-  onUpload: (data: any, file: File) => Promise<void>;
+  onUpload: (data: any, file: File, onProgress?: (progress: number) => void) => Promise<void>;
   onCancel: () => void;
   loading?: boolean;
 }
@@ -39,6 +41,21 @@ const MATERIAL_TYPES = [
   { value: "code", label: "Code Files" },
   { value: "book", label: "Book" },
 ];
+const NONE_VALUE = "__none__";
+
+const MB = 1024 * 1024;
+const FILE_LIMITS = [
+  { label: "Video", test: (file: File) => file.type.startsWith("video/"), max: 200 * MB },
+  { label: "Image", test: (file: File) => file.type.startsWith("image/"), max: 10 * MB },
+  { label: "PDF", test: (file: File) => file.type === "application/pdf", max: 50 * MB },
+  { label: "Presentation", test: (file: File) => file.type.includes("powerpoint") || file.type.includes("presentation"), max: 50 * MB },
+  { label: "Document", test: (file: File) => file.type.includes("word") || file.name.toLowerCase().endsWith(".docx"), max: 50 * MB },
+  { label: "Archive", test: (file: File) => file.type.includes("zip") || file.name.toLowerCase().endsWith(".zip"), max: 50 * MB },
+];
+
+function fileLimit(file: File) {
+  return FILE_LIMITS.find((limit) => limit.test(file)) || { label: "File", max: 50 * MB };
+}
 
 /**
  * Shared Material Uploader
@@ -48,6 +65,7 @@ const MATERIAL_TYPES = [
 export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
   courses,
   lessons,
+  schools = [],
   classSections,
   onUpload,
   onCancel,
@@ -57,6 +75,7 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>("");
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -66,6 +85,8 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
     type: "pdf",
     tags: [] as string[],
     visibility: "teachers",
+    schoolIds: [] as string[],
+    gradeLevels: [] as string[],
     classSectionIds: [] as string[],
   });
 
@@ -74,7 +95,18 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const limit = fileLimit(file);
+      if (file.size > limit.max) {
+        toast({
+          title: "File too large",
+          description: `${limit.label} files can be up to ${Math.round(limit.max / MB)} MB.`,
+          variant: "destructive"
+        });
+        e.target.value = "";
+        return;
+      }
       setSelectedFile(file);
+      setUploadProgress(0);
       setFormData({ ...formData, title: file.name.replace(/\.[^/.]+$/, "") });
 
       // Detect file type
@@ -122,6 +154,17 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
     }));
   };
 
+  const toggleArrayValue = (key: "schoolIds" | "gradeLevels" | "classSectionIds", value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [key]: prev[key].includes(value)
+        ? prev[key].filter((item) => item !== value)
+        : [...prev[key], value],
+    }));
+  };
+
+  const labelFor = (item: any) => item.name || item.sectionName || [item.grade, item.section].filter(Boolean).join(" - ") || item.title || item._id;
+
   const handleUpload = async () => {
     if (!selectedFile) {
       toast({ title: "Error", description: "Please select a file", variant: "destructive" });
@@ -142,16 +185,26 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
       await onUpload(
         {
           ...formData,
+          schoolId: formData.schoolIds[0],
+          grade: formData.gradeLevels[0] || "",
+          assignments: [
+            ...formData.schoolIds.map((id) => ({ type: "school", refId: id, label: labelFor(schools.find((school) => school._id === id) || {}) })),
+            ...formData.gradeLevels.map((grade) => ({ type: "grade", label: grade })),
+            ...formData.classSectionIds.map((id) => ({ type: "class", refId: id, label: labelFor(classSections?.find((section) => section._id === id) || {}) })),
+          ],
           fileName: selectedFile.name,
           originalName: selectedFile.name,
           mimeType: selectedFile.type,
           size: selectedFile.size,
         },
-        selectedFile
+        selectedFile,
+        setUploadProgress
       );
+      setUploadProgress(100);
 
       toast({ title: "Success", description: "Material uploaded successfully" });
       setSelectedFile(null);
+      setUploadProgress(0);
       setFormData({
         title: "",
         description: "",
@@ -160,6 +213,8 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
         type: "pdf",
         tags: [],
         visibility: "teachers",
+        schoolIds: [],
+        gradeLevels: [],
         classSectionIds: [],
       });
     } catch (error: any) {
@@ -205,7 +260,7 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
               className="hidden"
             />
             <p className="text-sm font-medium">Click to upload or drag and drop</p>
-            <p className="text-xs text-slate-500 mt-1">Max file size: 500MB</p>
+            <p className="text-xs text-slate-500 mt-1">PDF/PPT/DOC/ZIP up to 50 MB, images 10 MB, videos 200 MB</p>
 
             {selectedFile && (
               <div className="mt-4 p-3 bg-green-50 rounded text-left">
@@ -213,6 +268,16 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
                 <p className="text-xs text-green-700">
                   {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                 </p>
+              </div>
+            )}
+
+            {loading && (
+              <div className="mt-4 space-y-2 text-left">
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>Uploading...</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <Progress value={uploadProgress} />
               </div>
             )}
 
@@ -276,14 +341,14 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
               <div>
                 <label className="text-sm font-medium">Lesson (Optional)</label>
                 <Select
-                  value={formData.lessonId}
-                  onValueChange={(value) => setFormData({ ...formData, lessonId: value })}
+                  value={formData.lessonId || NONE_VALUE}
+                  onValueChange={(value) => setFormData({ ...formData, lessonId: value === NONE_VALUE ? "" : value })}
                 >
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Select lesson" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value={NONE_VALUE}>None</SelectItem>
                     {lessons.map((lesson) => (
                       <SelectItem key={lesson._id} value={lesson._id}>
                         {lesson.title}
@@ -337,25 +402,37 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
       </Card>
 
       {/* Class Sections */}
-      {classSections && classSections.length > 0 && (
+      {((schools && schools.length > 0) || (classSections && classSections.length > 0)) && (
         <Card>
           <CardHeader>
-            <CardTitle>Assign to Classes</CardTitle>
+            <CardTitle>Assign Access</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {classSections.map((section) => (
-                <label key={section._id} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.classSectionIds.includes(section._id)}
-                    onChange={() => handleClassSectionToggle(section._id)}
-                    className="rounded"
-                  />
-                  <span className="text-sm">{section.sectionName}</span>
-                </label>
-              ))}
-            </div>
+          <CardContent className="space-y-4">
+            {schools.length > 0 && (
+              <AssignmentGroup
+                title="Schools"
+                items={schools}
+                values={formData.schoolIds}
+                getLabel={labelFor}
+                onToggle={(id) => toggleArrayValue("schoolIds", id)}
+              />
+            )}
+            <AssignmentGroup
+              title="Grades"
+              items={Array.from({ length: 12 }, (_, index) => ({ _id: `Grade ${index + 1}`, name: `Grade ${index + 1}` }))}
+              values={formData.gradeLevels}
+              getLabel={labelFor}
+              onToggle={(id) => toggleArrayValue("gradeLevels", id)}
+            />
+            {classSections && classSections.length > 0 && (
+              <AssignmentGroup
+                title="Classes"
+                items={classSections}
+                values={formData.classSectionIds}
+                getLabel={labelFor}
+                onToggle={(id) => handleClassSectionToggle(id)}
+              />
+            )}
           </CardContent>
         </Card>
       )}
@@ -408,5 +485,26 @@ export const MaterialUploader: React.FC<MaterialUploaderProps> = ({
     </div>
   );
 };
+
+function AssignmentGroup({ title, items, values, onToggle, getLabel }: any) {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">{title}</p>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        {items.map((item: any) => (
+          <label key={item._id} className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={values.includes(item._id)}
+              onChange={() => onToggle(item._id)}
+              className="rounded"
+            />
+            <span>{getLabel(item)}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default MaterialUploader;

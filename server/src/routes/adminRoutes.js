@@ -866,7 +866,9 @@ router.put("/students/:id/fees", async (req, res) => {
   const status = feeStatusFromInput(req.body.status || req.body.feeStatus);
   if (!status) return res.status(400).json({ message: "Valid fee status is required" });
   const totalFees = Number(req.body.totalFees || 0);
-  const paidAmount = Number(req.body.paidAmount || 0);
+  let paidAmount = Number(req.body.paidAmount || 0);
+  if (status === "paid") paidAmount = totalFees;
+  if (status === "pending") paidAmount = 0;
   const fee = await FeeAccount.findOneAndUpdate(
     { studentId: student._id },
     {
@@ -876,7 +878,7 @@ router.put("/students/:id/fees", async (req, res) => {
       totalFees,
       paidAmount,
       dueDate: req.body.dueDate || undefined,
-      status,
+      status: normalizeFeeStatus(totalFees, paidAmount, req.body.dueDate),
       customOverride: true,
       updatedBy: req.user.id
     },

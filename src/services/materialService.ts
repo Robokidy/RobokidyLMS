@@ -14,6 +14,7 @@ export interface MaterialUploadParams {
   tags?: string[];
   status?: string;
   visibility?: string;
+  assignments?: Array<{ type: string; refId?: string; label?: string }>;
 }
 
 export interface MaterialFilters {
@@ -87,7 +88,8 @@ export class MaterialService {
     file: File,
     params: MaterialUploadParams,
     token: string,
-    role: "admin" | "teacher" = "admin"
+    role: "admin" | "teacher" = "admin",
+    onProgress?: (progress: number) => void
   ): Promise<Material> {
     const body = new FormData();
     body.append("file", file);
@@ -103,17 +105,29 @@ export class MaterialService {
     if (params.tags?.length) body.append("tags", JSON.stringify(params.tags));
     if (params.status) body.append("status", params.status);
     if (params.visibility) body.append("visibility", params.visibility);
+    if (params.assignments?.length) body.append("assignments", JSON.stringify(params.assignments));
 
-    const res = await fetch(`${API_BASE}/materials/upload`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`
-      },
-      body
+    const data = await new Promise<Material>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}/materials/upload`);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+      };
+      xhr.onload = () => {
+        const content = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress?.(100);
+          resolve(content);
+        } else {
+          reject(new Error(content.message || content.error || "Upload failed"));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Upload failed. Check your API URL and network connection."));
+      xhr.ontimeout = () => reject(new Error("Upload timed out. Please try again."));
+      xhr.timeout = 10 * 60 * 1000;
+      xhr.send(body);
     });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || "Upload failed");
     return data;
   }
 

@@ -12,7 +12,10 @@ function TeacherNav() {
   const navItems = getTeacherNavItems(user);
 
   return (
-    <nav className="space-y-1 p-3">
+    <nav className="p-4 space-y-5 overflow-y-auto">
+      <div>
+        <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Workspace</p>
+        <div className="space-y-1">
       {navItems.map((item) => {
         const Icon = item.icon;
         const active = location.pathname === item.href || location.pathname.startsWith(`${item.href}/`);
@@ -20,15 +23,19 @@ function TeacherNav() {
           <Link
             key={item.href}
             to={item.href}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-              active ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
+            className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all ${
+              active
+                ? "bg-slate-950 text-white shadow-sm dark:bg-white dark:text-slate-950"
+                : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
             }`}
           >
             <Icon className="h-4 w-4" />
-            {item.label}
+            <span className="font-medium">{item.label}</span>
           </Link>
         );
       })}
+        </div>
+      </div>
     </nav>
   );
 }
@@ -39,16 +46,18 @@ export default function TeacherShell() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-50">
       <div className="flex min-h-screen">
-        <aside className="hidden w-72 border-r bg-white/90 dark:bg-slate-950/80 lg:block">
-          <div className="border-b px-5 py-5">
-            <p className="text-lg font-bold">Teacher Workspace</p>
-            <p className="text-xs text-muted-foreground">School-scoped LMS tools</p>
+        <aside className="hidden lg:flex lg:w-72 lg:flex-col border-r bg-white/80 dark:bg-slate-950/60 backdrop-blur">
+          <div className="h-20 px-6 flex items-center border-b bg-slate-950 text-white">
+            <div>
+              <p className="text-xl font-bold">Robokidy LMS</p>
+              <p className="text-xs text-slate-300">Teacher operations console</p>
+            </div>
           </div>
           <TeacherNav />
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-white/80 px-4 backdrop-blur dark:bg-slate-950/70 lg:px-6">
+          <header className="h-20 border-b bg-white/90 dark:bg-slate-950/80 backdrop-blur px-4 lg:px-8 flex items-center justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <Sheet>
                 <SheetTrigger asChild>
@@ -57,15 +66,15 @@ export default function TeacherShell() {
                   </Button>
                 </SheetTrigger>
                 <SheetContent side="left" className="p-0">
-                  <div className="border-b px-5 py-5">
-                    <p className="font-bold">Teacher Workspace</p>
+                  <div className="h-20 px-6 flex items-center border-b bg-slate-950 text-white">
+                    <p className="text-lg font-bold">Robokidy LMS</p>
                   </div>
                   <TeacherNav />
                 </SheetContent>
               </Sheet>
               <div className="min-w-0">
-                <h1 className="truncate text-xl font-bold">Teacher Workspace</h1>
-                <p className="truncate text-xs text-muted-foreground">Manage classes, students, attendance, and analytics.</p>
+                <h1 className="truncate text-xl lg:text-2xl font-bold tracking-tight">Teacher Workspace</h1>
+                <p className="truncate text-sm text-muted-foreground">Shared academic management with assigned operational data.</p>
               </div>
             </div>
             <div className="flex items-center gap-2">

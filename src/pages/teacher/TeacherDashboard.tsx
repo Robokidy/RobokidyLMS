@@ -1,114 +1,159 @@
-import { useEffect, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useEffect, useMemo, useState } from "react";
+import { Activity, ArrowUpRight, BookMarked, Building2, CalendarCheck, ClipboardList, CreditCard, FileQuestion, GraduationCap, Medal, Users } from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useAuth } from "@/context/AuthContext";
 import { teacherApi } from "@/services/teacherApi";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+
+const kpis = [
+  { key: "assignedSchools", label: "Assigned Schools", icon: Building2 },
+  { key: "assignedClasses", label: "Assigned Classes", icon: GraduationCap },
+  { key: "assignedStudents", label: "Assigned Students", icon: Users },
+  { key: "activeStudents", label: "Active Students", icon: Activity },
+  { key: "attendancePercentage", label: "Attendance %", icon: CalendarCheck, percent: true },
+  { key: "pendingFees", label: "Pending Fees", icon: CreditCard, money: true },
+  { key: "totalMaterialsAssigned", label: "Materials", icon: BookMarked },
+  { key: "totalQuizzesAssigned", label: "Quizzes", icon: FileQuestion },
+  { key: "totalAssessmentsAssigned", label: "Assessments", icon: ClipboardList },
+  { key: "courseCompletionRate", label: "Completion", icon: GraduationCap, percent: true },
+  { key: "certificatesIssued", label: "Certificates", icon: Medal },
+];
+
+function display(stats: any, card: any) {
+  const raw = stats?.[card.key] ?? 0;
+  if (card.money) return `Rs. ${Number(raw).toLocaleString()}`;
+  if (card.percent) return `${Number(raw).toLocaleString()}%`;
+  return Number(raw).toLocaleString();
+}
 
 export default function TeacherDashboard() {
   const { token } = useAuth();
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!token) return;
     setLoading(true);
     teacherApi.dashboard(token)
-      .then((data) => setDashboard(data))
-      .catch(() => setDashboard(null))
+      .then((data) => {
+        setDashboard(data);
+        setError("");
+      })
+      .catch((err) => setError(err.message || "Unable to load teacher dashboard"))
       .finally(() => setLoading(false));
   }, [token]);
 
-  return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Teacher overview</p>
-            <h1 className="mt-2 text-3xl font-semibold">Teacher dashboard</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-500">High level analytics for your assigned classes, without student tables or cross-module filter bleed.</p>
-          </div>
-          <Button variant="outline">Refresh</Button>
-        </div>
-      </section>
+  const trend = useMemo(() => dashboard?.charts?.attendanceTrend || [], [dashboard]);
+  const performance = useMemo(() => dashboard?.charts?.assessmentPerformance || [], [dashboard]);
+  const activity = dashboard?.recentActivity || [];
 
-      <div className="grid gap-4 xl:grid-cols-4">
-        <Card className="rounded-3xl">
-          <CardHeader><CardTitle>Total classes</CardTitle></CardHeader>
-          <CardContent>{dashboard?.totalClasses ?? "-"}</CardContent>
+  return (
+    <div className="space-y-4">
+      {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {kpis.map((card) => {
+          const Icon = card.icon;
+          return (
+            <Card key={card.key} className="rounded-lg shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm text-slate-500">{card.label}</CardTitle>
+                <span className="grid h-9 w-9 place-items-center rounded-md bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <Icon className="h-4 w-4" />
+                </span>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between gap-3">
+                  <p className="text-2xl font-bold">{loading ? "..." : display(dashboard, card)}</p>
+                  <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                    <ArrowUpRight className="mr-1 h-3 w-3" />Live
+                  </Badge>
+                </div>
+                <div className="mt-4 h-8">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={trend}>
+                      <Area type="monotone" dataKey="value" stroke="#0f172a" fill="#e2e8f0" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.5fr_0.9fr]">
+        <Card className="rounded-lg">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Assessment Performance</CardTitle>
+            <Badge variant="outline">Assigned Students</Badge>
+          </CardHeader>
+          <CardContent className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={performance}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" />
+                <YAxis domain={[0, 100]} />
+                <Tooltip />
+                <Bar dataKey="score" fill="#0f172a" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="quiz" fill="#2563eb" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
         </Card>
-        <Card className="rounded-3xl">
-          <CardHeader><CardTitle>Total students</CardTitle></CardHeader>
-          <CardContent>{dashboard?.totalStudents ?? "-"}</CardContent>
-        </Card>
-        <Card className="rounded-3xl">
-          <CardHeader><CardTitle>Active assignments</CardTitle></CardHeader>
-          <CardContent>{dashboard?.activeAssignments ?? "-"}</CardContent>
-        </Card>
-        <Card className="rounded-3xl">
-          <CardHeader><CardTitle>Attendance %</CardTitle></CardHeader>
-          <CardContent>{dashboard?.attendancePercentage ?? "-"}%</CardContent>
+
+        <Card className="rounded-lg">
+          <CardHeader><CardTitle>Recent Activity</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {activity.slice(0, 7).map((row: any, index: number) => (
+              <div key={`${row.action}-${index}`} className="flex items-center gap-3 rounded-md border bg-white p-3 dark:bg-slate-900">
+                <span className="grid h-9 w-9 place-items-center rounded-md bg-slate-100 dark:bg-slate-800">
+                  <Activity className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium capitalize">{String(row.action || "").replaceAll("_", " ")}</p>
+                  <p className="text-xs text-slate-500">{row.username || "System"} - {row.createdAt ? new Date(row.createdAt).toLocaleString() : "Recent"}</p>
+                </div>
+              </div>
+            ))}
+            {!activity.length && <p className="py-8 text-center text-sm text-slate-500">No recent activity yet.</p>}
+          </CardContent>
         </Card>
       </div>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">Upcoming classes</h2>
-            <p className="text-sm text-slate-500">Your assigned classes are shown with the latest participation metrics.</p>
-          </div>
-          <Badge variant="secondary">{dashboard?.classes?.length ?? 0} classes</Badge>
-        </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card className="rounded-lg">
+          <CardHeader><CardTitle>Attendance Trend</CardTitle></CardHeader>
+          <CardContent className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trend}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" />
+                <YAxis domain={[0, 100]} />
+                <Tooltip />
+                <Area type="monotone" dataKey="value" stroke="#2563eb" fill="#bfdbfe" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {loading ? (
-            Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="h-32 rounded-3xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900"></div>
-            ))
-          ) : dashboard?.classes?.length ? (
-            dashboard.classes.map((klass: any) => (
-              <Card key={klass._id} className="rounded-3xl border-slate-200">
-                <CardHeader>
-                  <CardTitle>{klass.name}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-slate-500">Grade {klass.grade} - Section {klass.section}</p>
-                  <div className="mt-4 grid gap-2 text-sm text-slate-600 dark:text-slate-400">
-                    <div>Tracks: {(klass.courseTrackIds || []).map((track: any) => track.trackName || track.trackCode).join(", ") || "None"}</div>
-                    <div>Subjects: {(klass.subjects || []).join(", ") || "Not defined"}</div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <div className="col-span-full rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">No class metadata available yet.</div>
-          )}
-        </div>
-      </section>
-
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">Performance snapshot</h2>
-            <p className="text-sm text-slate-500">Attendance and assignment activity for your teacher workspace.</p>
-          </div>
-        </div>
-        <div className="mt-6 h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={[
-              { name: "Attend", value: dashboard?.attendancePercentage ?? 0 },
-              { name: "Assignments", value: dashboard?.activeAssignments ?? 0 }
-            ]}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" fill="#22c55e" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
+        <Card className="rounded-lg">
+          <CardHeader><CardTitle>Operational Mix</CardTitle></CardHeader>
+          <CardContent className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dashboard?.charts?.operations || []}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" fill="#16a34a" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

@@ -56,6 +56,7 @@ export type Material = {
   courseTrackId?: CourseTrack | string;
   type: MaterialType;
   fileUrl?: string;
+  cloudinarySecureUrl?: string;
   originalName?: string;
   mimeType?: string;
   size?: number;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { BookMarked, Eye, FileArchive, FileText, Grid2X2, List, PlaySquare, Presentation, Search, Trash2, Upload } from "lucide-react";
+import { BookMarked, ExternalLink, Eye, FileArchive, FileText, Grid2X2, List, PlaySquare, Presentation, Search, Trash2, Upload } from "lucide-react";
 import { API_BASE, apiFetch } from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
 import AdminShell from "@/components/layout/AdminShell";
@@ -10,9 +10,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import type { Course, Material, MaterialType } from "@/types";
 
 const materialTypes: MaterialType[] = ["pdf", "video", "worksheet", "presentation", "zip"];
+const MB = 1024 * 1024;
+const FILE_LIMITS = [
+  { label: "Video", test: (file: File) => file.type.startsWith("video/"), max: 200 * MB },
+  { label: "Image", test: (file: File) => file.type.startsWith("image/"), max: 10 * MB },
+  { label: "PDF", test: (file: File) => file.type === "application/pdf", max: 50 * MB },
+  { label: "Presentation", test: (file: File) => file.type.includes("powerpoint") || file.type.includes("presentation"), max: 50 * MB },
+  { label: "Document", test: (file: File) => file.type.includes("word") || file.name.toLowerCase().endsWith(".docx"), max: 50 * MB },
+  { label: "Archive", test: (file: File) => file.type.includes("zip") || file.name.toLowerCase().endsWith(".zip"), max: 50 * MB },
+];
+
+function validateUploadFile(file: File) {
+  const limit = FILE_LIMITS.find((item) => item.test(file)) || { label: "File", max: 50 * MB };
+  return file.size <= limit.max ? "" : `${limit.label} files can be up to ${Math.round(limit.max / MB)} MB.`;
+}
 
 function materialIcon(type: MaterialType) {
   if (type === "video") return PlaySquare;
@@ -31,6 +46,8 @@ export default function AdminMaterialsPage() {
   const [preview, setPreview] = useState<Material | null>(null);
   const [deletingMaterial, setDeletingMaterial] = useState<Material | null>(null);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -67,20 +84,38 @@ export default function AdminMaterialsPage() {
     formData.append("status", "published");
     formData.append("visibility", "students");
 
-    const res = await fetch(`${API_BASE}/materials/upload`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`
-      },
-      body: formData
+    setUploading(true);
+    setUploadProgress(0);
+    const data = await new Promise<any>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}/materials/upload`);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) setUploadProgress(Math.round((event.loaded / event.total) * 100));
+      };
+      xhr.onload = () => {
+        const content = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setUploadProgress(100);
+          resolve(content);
+        } else {
+          reject(new Error(content.message || content.error || "Upload failed"));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Upload failed. Check your API URL and network connection."));
+      xhr.ontimeout = () => reject(new Error("Upload timed out. Please try again."));
+      xhr.timeout = 10 * 60 * 1000;
+      xhr.send(formData);
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || "Upload failed");
 
-    setForm((prev) => ({ ...prev, title: "", description: "" }));
-    setFile(null);
-    toast({ title: "Material uploaded", description: `${data.title} is now available in the repository.` });
-    load();
+    try {
+      setForm((prev) => ({ ...prev, title: "", description: "" }));
+      setFile(null);
+      toast({ title: "Material uploaded", description: `${data.title} is now available in the repository.` });
+      load();
+    } finally {
+      setUploading(false);
+    }
   };
 
   const disableMaterial = async (id: string) => {
@@ -121,11 +156,25 @@ export default function AdminMaterialsPage() {
             <Input
               type="file"
               accept=".pdf,.ppt,.pptx,.zip,.mp4,.webm,.ogg,.doc,.docx,.txt,application/pdf,video/mp4,video/webm,application/zip"
-              onChange={(event) => setFile(event.target.files?.[0] || null)}
+              onChange={(event) => {
+                const selected = event.target.files?.[0] || null;
+                if (selected) {
+                  const error = validateUploadFile(selected);
+                  if (error) {
+                    toast({ title: "File too large", description: error, variant: "destructive" });
+                    event.target.value = "";
+                    setFile(null);
+                    return;
+                  }
+                }
+                setUploadProgress(0);
+                setFile(selected);
+              }}
             />
             {file && <p className="text-xs text-slate-500">{file.name} ({Math.round(file.size / 1024)} KB)</p>}
-            <Button className="w-full" onClick={createMaterial} disabled={!form.title.trim() || !form.courseId || !file}>
-              <Upload className="mr-2 h-4 w-4" />Upload
+            {uploading && <div className="space-y-2"><div className="flex justify-between text-xs text-slate-500"><span>Uploading...</span><span>{uploadProgress}%</span></div><Progress value={uploadProgress} /></div>}
+            <Button className="w-full" onClick={() => createMaterial().catch((error) => { setUploading(false); toast({ title: "Upload failed", description: error.message, variant: "destructive" }); })} disabled={!form.title.trim() || !form.courseId || !file || uploading}>
+              <Upload className="mr-2 h-4 w-4" />{uploading ? "Uploading..." : "Upload"}
             </Button>
           </CardContent>
         </Card>
@@ -193,12 +242,12 @@ export default function AdminMaterialsPage() {
 
 function MaterialCard({ material, onPreview, onDelete }: any) {
   const Icon = materialIcon(material.type);
-  return <div className="rounded-lg border bg-white p-4 shadow-sm dark:bg-slate-900"><div className="flex items-start justify-between"><span className="grid h-12 w-12 place-items-center rounded-lg bg-slate-100 dark:bg-slate-800"><Icon className="h-5 w-5" /></span><Badge variant={material.active ? "secondary" : "outline"}>{material.active ? "Active" : "Disabled"}</Badge></div><p className="mt-4 truncate font-semibold">{material.title}</p><p className="mt-1 line-clamp-2 h-10 text-sm text-slate-500">{material.description || material.originalName}</p><div className="mt-4 flex items-center justify-between text-xs text-slate-500"><span>{material.viewCount || 0} views</span><span>{material.downloadCount || 0} downloads</span></div><div className="mt-4 flex gap-2"><Button size="sm" variant="outline" onClick={() => onPreview(material)}><Eye className="mr-1 h-4 w-4" />Preview</Button><Button size="sm" variant="destructive" onClick={() => onDelete(material)}><Trash2 className="mr-1 h-4 w-4" />Delete</Button></div></div>;
+  return <div className="rounded-lg border bg-white p-4 shadow-sm dark:bg-slate-900"><div className="flex items-start justify-between"><span className="grid h-12 w-12 place-items-center rounded-lg bg-slate-100 dark:bg-slate-800"><Icon className="h-5 w-5" /></span><Badge variant={material.active ? "secondary" : "outline"}>{material.active ? "Active" : "Disabled"}</Badge></div><p className="mt-4 truncate font-semibold">{material.title}</p><p className="mt-1 line-clamp-2 h-10 text-sm text-slate-500">{material.description || material.originalName}</p><div className="mt-4 flex items-center justify-between text-xs text-slate-500"><span>{material.viewCount || 0} views</span><span>{material.downloadCount || 0} downloads</span></div><div className="mt-4 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => onPreview(material)}><Eye className="mr-1 h-4 w-4" />Preview</Button>{material.cloudinarySecureUrl && <Button size="sm" variant="outline" onClick={() => window.open(material.cloudinarySecureUrl, "_blank", "noopener,noreferrer")}><ExternalLink className="mr-1 h-4 w-4" />Open</Button>}<Button size="sm" variant="destructive" onClick={() => onDelete(material)}><Trash2 className="mr-1 h-4 w-4" />Delete</Button></div></div>;
 }
 
 function MaterialRow({ material, onPreview, onDelete }: any) {
   const Icon = materialIcon(material.type);
-  return <div className="grid gap-3 rounded-lg border bg-white p-3 md:grid-cols-[1fr_120px_120px_160px] md:items-center dark:bg-slate-900"><div className="flex items-center gap-3"><Icon className="h-5 w-5 text-slate-500" /><div><p className="font-medium">{material.title}</p><p className="text-xs text-slate-500">{material.originalName || material.description}</p></div></div><Badge variant="outline" className="w-fit capitalize">{material.type}</Badge><p className="text-sm text-slate-500">{material.viewCount || 0} views</p><div className="flex gap-2 md:justify-end"><Button size="sm" variant="outline" onClick={() => onPreview(material)}>Preview</Button><Button size="sm" variant="destructive" onClick={() => onDelete(material)}>Delete</Button></div></div>;
+  return <div className="grid gap-3 rounded-lg border bg-white p-3 md:grid-cols-[1fr_120px_120px_220px] md:items-center dark:bg-slate-900"><div className="flex items-center gap-3"><Icon className="h-5 w-5 text-slate-500" /><div><p className="font-medium">{material.title}</p><p className="text-xs text-slate-500">{material.originalName || material.description}</p></div></div><Badge variant="outline" className="w-fit capitalize">{material.type}</Badge><p className="text-sm text-slate-500">{material.viewCount || 0} views</p><div className="flex gap-2 md:justify-end"><Button size="sm" variant="outline" onClick={() => onPreview(material)}>Preview</Button>{material.cloudinarySecureUrl && <Button size="sm" variant="outline" onClick={() => window.open(material.cloudinarySecureUrl, "_blank", "noopener,noreferrer")}>Open</Button>}<Button size="sm" variant="destructive" onClick={() => onDelete(material)}>Delete</Button></div></div>;
 }
 
 function Stat({ label, value }: any) {

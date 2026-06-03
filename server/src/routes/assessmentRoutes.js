@@ -10,6 +10,8 @@ const TestAttempt = require("../models/TestAttempt");
 const CheatingViolation = require("../models/CheatingViolation");
 const Course = require("../models/Course");
 const ClassSection = require("../models/ClassSection");
+const School = require("../models/School");
+const Lesson = require("../models/Lesson");
 
 const router = express.Router();
 router.use(auth, loadUser);
@@ -26,6 +28,8 @@ function scope(req) {
     id: userId(req),
     role: user.role,
     schoolId: user.schoolId,
+    schoolIds: (user.schoolIds || []).map(String),
+    grade: user.grade,
     classSectionIds: (user.classSectionIds || []).map(String)
   };
 }
@@ -109,19 +113,20 @@ function testAccessFilter(req) {
   const current = scope(req);
   const filter = {};
   if (current.role === "teacher") {
-    filter.$or = [
-      { createdBy: current.id },
-      { classSectionIds: { $in: current.classSectionIds } },
-      { "assignedTo.classes": { $in: current.classSectionIds } }
-    ];
+    return filter;
   }
   if (current.role === "student") {
     filter.status = "published";
+    const studentSchoolIds = [current.schoolId, ...current.schoolIds].filter(Boolean).map(String);
     filter.$or = [
       { classSectionIds: { $in: current.classSectionIds } },
       { "assignedTo.classes": { $in: current.classSectionIds } },
-      { "assignedTo.students": current.id }
+      { "assignedTo.students": current.id },
+      { "assignedTo.schools": { $in: studentSchoolIds } }
     ];
+    if (current.grade) {
+      filter.$or.push({ grade: current.grade }, { "assignedTo.grades": current.grade });
+    }
   }
   return filter;
 }
@@ -129,11 +134,14 @@ function testAccessFilter(req) {
 router.get("/meta", async (req, res) => {
   const current = scope(req);
   const classFilter = current.role === "admin" ? {} : { _id: { $in: current.classSectionIds } };
-  const [courses, classes] = await Promise.all([
+  const schoolFilter = current.role === "admin" ? { active: { $ne: false } } : { _id: { $in: [current.schoolId, ...current.schoolIds].filter(Boolean) } };
+  const [courses, classes, schools, lessons] = await Promise.all([
     Course.find({ active: true }).select("name slug active").sort({ name: 1 }).lean(),
-    ClassSection.find(classFilter).select("name grade section schoolId courseIds").sort({ grade: 1, section: 1 }).lean()
+    ClassSection.find(classFilter).select("name grade section schoolId courseIds").sort({ grade: 1, section: 1 }).lean(),
+    School.find(schoolFilter).select("name code active").sort({ name: 1 }).lean(),
+    Lesson.find({ active: true }).select("title courseId module chapter status").sort({ title: 1 }).limit(500).lean()
   ]);
-  res.json({ courses, classes });
+  res.json({ courses, classes, schools, lessons });
 });
 
 router.get("/summary", async (req, res) => {
@@ -151,12 +159,13 @@ router.get("/summary", async (req, res) => {
 router.get("/questions", async (req, res) => {
   const current = scope(req);
   const filter = { active: { $ne: false } };
-  if (current.role !== "admin") {
+  if (current.role === "student") {
     filter.$or = [{ createdBy: current.id }, { schoolId: current.schoolId }, { schoolId: null }];
   }
   if (req.query.type) filter.type = req.query.type;
   if (req.query.difficulty) filter.difficulty = req.query.difficulty;
   if (req.query.courseId) filter.courseId = req.query.courseId;
+  if (req.query.lessonId) filter.lessonId = req.query.lessonId;
   if (req.query.search) filter.questionText = new RegExp(String(req.query.search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
   res.json(await Question.find(filter).populate("courseId", "name slug").sort({ createdAt: -1 }).limit(300).lean());
 });
@@ -182,11 +191,35 @@ router.post("/questions", async (req, res) => {
     topic: req.body.topic || "",
     category: req.body.category || "",
     courseId: req.body.courseId || undefined,
+    lessonId: req.body.lessonId || undefined,
     schoolId: current.schoolId,
     classSectionIds: toArray(req.body.classSectionIds),
     createdBy: current.id
   });
   res.status(201).json(question);
+});
+
+router.put("/questions/:id", async (req, res) => {
+  if (!ensureStaff(req, res)) return;
+  const current = scope(req);
+  const question = await Question.findById(req.params.id);
+  if (!question) return res.status(404).json({ message: "Question not found" });
+  const patch = { ...req.body };
+  if (patch.tags !== undefined) patch.tags = toArray(patch.tags);
+  Object.assign(question, patch, { updatedBy: current.id });
+  await question.save();
+  res.json(question);
+});
+
+router.delete("/questions/:id", async (req, res) => {
+  if (!ensureStaff(req, res)) return;
+  const current = scope(req);
+  const question = await Question.findById(req.params.id);
+  if (!question) return res.status(404).json({ message: "Question not found" });
+  question.active = false;
+  await question.save();
+  await Test.updateMany({ questions: question._id }, { $pull: { questions: question._id } });
+  res.json({ message: "Question deleted" });
 });
 
 router.get("/tests", async (req, res) => {
@@ -253,7 +286,6 @@ router.put("/tests/:id", async (req, res) => {
   const current = scope(req);
   const test = await Test.findById(req.params.id);
   if (!test) return res.status(404).json({ message: "Test not found" });
-  if (current.role !== "admin" && String(test.createdBy) !== String(current.id)) return res.status(403).json({ message: "You can only edit your own tests" });
   const validationErrors = await testValidationErrors({ ...test.toObject(), ...req.body });
   if (validationErrors.length) return res.status(400).json({ message: validationErrors[0], errors: validationErrors });
   Object.assign(test, req.body);
@@ -263,22 +295,75 @@ router.put("/tests/:id", async (req, res) => {
   res.json(test);
 });
 
-router.get("/reports", async (req, res) => {
+router.delete("/tests/:id", async (req, res) => {
+  if (!ensureStaff(req, res)) return;
+  const current = scope(req);
+  const test = await Test.findById(req.params.id);
+  if (!test) return res.status(404).json({ message: "Assessment not found" });
+  await Test.deleteOne({ _id: test._id });
+  await TestAttempt.deleteMany({ testId: test._id });
+  await CheatingViolation.deleteMany({ testId: test._id });
+  res.json({ message: "Assessment deleted" });
+});
+
+router.post("/tests/:id/publish", async (req, res) => {
+  if (!ensureStaff(req, res)) return;
+  const current = scope(req);
+  const test = await Test.findById(req.params.id);
+  if (!test) return res.status(404).json({ message: "Assessment not found" });
+  if (!(test.questions || []).length) return res.status(400).json({ message: "Add questions before publishing" });
+  test.status = "published";
+  await test.save();
+  res.json(test);
+});
+
+router.post("/tests/:id/assign", async (req, res) => {
+  if (!ensureStaff(req, res)) return;
+  const current = scope(req);
+  const test = await Test.findById(req.params.id);
+  if (!test) return res.status(404).json({ message: "Assessment not found" });
+  const classSectionIds = toArray(req.body.classSectionIds || req.body.classes);
+  test.classSectionIds = classSectionIds;
+  test.assignedTo = {
+    schools: toArray(req.body.schoolIds || req.body.schools),
+    classes: classSectionIds,
+    grades: toArray(req.body.grades),
+    students: toArray(req.body.studentIds || req.body.students),
+    courseTracks: toArray(req.body.courseTrackIds)
+  };
+  if (req.body.availableFrom) test.startDateTime = req.body.availableFrom;
+  if (req.body.availableTo) test.endDateTime = req.body.availableTo;
+  await test.save();
+  res.json(test);
+});
+
+function reportAccessMatch(req) {
+  const current = scope(req);
   const match = {};
-  if (req.query.dateFrom || req.query.dateTo) {
-    match.createdAt = {};
-    if (req.query.dateFrom) match.createdAt.$gte = new Date(req.query.dateFrom);
-    if (req.query.dateTo) match.createdAt.$lte = new Date(req.query.dateTo);
-  }
-  const attempts = await TestAttempt.find(match)
-    .populate("testId", "title testType courseId grade")
-    .populate("studentId", "username fullName schoolId classSectionIds")
-    .sort({ createdAt: -1 })
-    .limit(500)
-    .lean();
-  const rows = attempts.map((attempt) => ({
+  if (current.role === "student") match.studentId = current.id;
+  if (current.role === "teacher") match.classId = { $in: current.classSectionIds };
+  return match;
+}
+
+function summarizeReportRows(rows) {
+  return {
+    attempts: rows.length,
+    averageScore: rows.length ? Math.round(rows.reduce((sum, row) => sum + row.percentage, 0) / rows.length) : 0,
+    passed: rows.filter((row) => row.passed).length,
+    failed: rows.filter((row) => row.status === "submitted" && !row.passed).length,
+    violations: rows.reduce((sum, row) => sum + row.violations, 0)
+  };
+}
+
+function reportRowsFromAttempts(attempts) {
+  return attempts.map((attempt) => ({
     _id: attempt._id,
+    studentId: attempt.studentId?._id,
     student: attempt.studentId?.fullName || attempt.studentId?.username || "Student",
+    rollNumber: attempt.studentId?.rollNumber || "",
+    classId: attempt.classId?._id || attempt.classId,
+    className: attempt.classId?.name || attempt.classId?.grade || "Class",
+    testId: attempt.testId?._id,
     test: attempt.testId?.title || "Assessment",
     type: attempt.testId?.testType || "test",
     score: attempt.totalMarksObtained || 0,
@@ -287,16 +372,79 @@ router.get("/reports", async (req, res) => {
     status: attempt.status,
     passed: attempt.passed,
     violations: attempt.violationCount || 0,
-    submittedAt: attempt.endTime || attempt.updatedAt
+    submittedAt: attempt.endTime || attempt.updatedAt,
+    answers: attempt.answers || []
   }));
+}
+
+router.get("/reports", async (req, res) => {
+  const match = reportAccessMatch(req);
+  if (req.query.dateFrom || req.query.dateTo) {
+    match.createdAt = {};
+    if (req.query.dateFrom) match.createdAt.$gte = new Date(req.query.dateFrom);
+    if (req.query.dateTo) match.createdAt.$lte = new Date(req.query.dateTo);
+  }
+  if (req.query.testId) match.testId = req.query.testId;
+  if (req.query.studentId) match.studentId = req.query.studentId;
+  if (req.query.classId) match.classId = req.query.classId;
+  const attempts = await TestAttempt.find(match)
+    .populate("testId", "title testType courseId grade")
+    .populate("studentId", "username fullName rollNumber schoolId classSectionIds")
+    .populate("classId", "name grade section")
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .lean();
+  const rows = reportRowsFromAttempts(attempts);
+  const classSummary = Object.values(rows.reduce((acc, row) => {
+    const key = String(row.classId || "unassigned");
+    acc[key] = acc[key] || { classId: row.classId, className: row.className, attempts: 0, averageScore: 0, passed: 0 };
+    acc[key].attempts += 1;
+    acc[key].averageScore += row.percentage;
+    if (row.passed) acc[key].passed += 1;
+    return acc;
+  }, {})).map((row) => ({ ...row, averageScore: row.attempts ? Math.round(row.averageScore / row.attempts) : 0 }));
+  const studentSummary = Object.values(rows.reduce((acc, row) => {
+    const key = String(row.studentId || row.student);
+    acc[key] = acc[key] || { studentId: row.studentId, student: row.student, rollNumber: row.rollNumber, attempts: 0, averageScore: 0, passed: 0 };
+    acc[key].attempts += 1;
+    acc[key].averageScore += row.percentage;
+    if (row.passed) acc[key].passed += 1;
+    return acc;
+  }, {})).map((row) => ({ ...row, averageScore: row.attempts ? Math.round(row.averageScore / row.attempts) : 0 }));
   res.json({
     rows,
-    summary: {
-      attempts: rows.length,
-      averageScore: rows.length ? Math.round(rows.reduce((sum, row) => sum + row.percentage, 0) / rows.length) : 0,
-      passed: rows.filter((row) => row.passed).length,
-      violations: rows.reduce((sum, row) => sum + row.violations, 0)
-    }
+    summary: summarizeReportRows(rows),
+    classSummary,
+    studentSummary
+  });
+});
+
+router.get("/tests/:id/report", async (req, res) => {
+  const match = { ...reportAccessMatch(req), testId: req.params.id };
+  if (req.query.studentId) match.studentId = req.query.studentId;
+  if (req.query.classId) match.classId = req.query.classId;
+  const [test, attempts] = await Promise.all([
+    Test.findById(req.params.id).populate("courseId", "name slug").populate("classSectionIds", "name grade section").populate("questions", "questionText type marks difficulty").lean(),
+    TestAttempt.find(match)
+      .populate("studentId", "username fullName rollNumber")
+      .populate("classId", "name grade section")
+      .sort({ percentage: -1, createdAt: -1 })
+      .lean()
+  ]);
+  if (!test) return res.status(404).json({ message: "Assessment not found" });
+  const rows = reportRowsFromAttempts(attempts);
+  res.json({
+    test,
+    rows,
+    summary: summarizeReportRows(rows),
+    classSummary: Object.values(rows.reduce((acc, row) => {
+      const key = String(row.classId || "unassigned");
+      acc[key] = acc[key] || { classId: row.classId, className: row.className, attempts: 0, averageScore: 0, passed: 0 };
+      acc[key].attempts += 1;
+      acc[key].averageScore += row.percentage;
+      if (row.passed) acc[key].passed += 1;
+      return acc;
+    }, {})).map((row) => ({ ...row, averageScore: row.attempts ? Math.round(row.averageScore / row.attempts) : 0 }))
   });
 });
 

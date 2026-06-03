@@ -9,6 +9,7 @@ import ChangePasswordPage from "@/pages/ChangePasswordPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import Index from "@/pages/Index";
 import LessonsPage from "@/pages/student/LessonsPage";
+import StudentDashboard from "@/pages/student/StudentDashboard";
 import MaterialsPage from "@/pages/student/MaterialsPage";
 import MaterialViewerPage from "@/pages/student/MaterialViewerPage";
 import LessonViewerPage from "@/pages/student/LessonViewerPage";
@@ -23,21 +24,23 @@ import AdminCoursesPage from "@/pages/admin/AdminCoursesPage";
 import AdminSchoolsPage from "@/pages/admin/AdminSchoolsPage";
 import AdminAiTutorPage from "@/pages/admin/AdminAiTutorPage";
 import AdminCompetitionsPage from "@/pages/admin/AdminCompetitionsPage";
+import AdminAssessmentManagementPage from "@/pages/admin/AdminAssessmentManagementPage";
 import AssessmentCenterPage from "@/pages/assessment/AssessmentCenterPage";
 import AssessmentAttemptPage from "@/pages/assessment/AssessmentAttemptPage";
 import CeoDashboard from "@/pages/admin/CeoDashboard";
 import TeacherShell from "@/components/layout/TeacherShell";
 import TeacherDashboard from "@/pages/teacher/TeacherDashboard";
-import ClassesPage from "@/pages/teacher/ClassesPage";
 import ClassDetailsPage from "@/pages/teacher/ClassDetailsPage";
-import StudentsPage from "@/pages/teacher/StudentsPage";
-import AttendancePage from "@/pages/teacher/AttendancePage";
 import AssignmentsPage from "@/pages/teacher/AssignmentsPage";
 import TeacherMaterialsPage from "@/pages/teacher/MaterialsPage";
-import TeacherCurriculumPage from "@/pages/teacher/CurriculumPage";
+import TeacherQuizAssessmentPage from "@/pages/teacher/TeacherQuizAssessmentPage";
+import TeacherCertificatesPage from "@/pages/teacher/TeacherCertificatesPage";
+import TeacherReportsPage from "@/pages/teacher/TeacherReportsPage";
+import TeacherProfilePage from "@/pages/teacher/TeacherProfilePage";
+import UnifiedMaterialsPage from "@/modules/materials/UnifiedMaterialsPage";
+import UnifiedCurriculumPage from "@/modules/curriculum/UnifiedCurriculumPage";
 import CodingPage from "@/pages/teacher/CodingPage";
 import AnalyticsPage from "@/pages/teacher/AnalyticsPage";
-import MessagesPage from "@/pages/teacher/MessagesPage";
 import StudentAutoRedirect from "@/components/layout/StudentAutoRedirect";
 
 const App = () => (
@@ -51,6 +54,7 @@ const App = () => (
         <Route path="/login" element={<LoginPage />} />
         <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
         <Route path="/student" element={<ProtectedRoute role="student"><StudentAutoRedirect /></ProtectedRoute>} />
+        <Route path="/student/dashboard" element={<ProtectedRoute role="student"><StudentDashboard /></ProtectedRoute>} />
         <Route path="/student/lessons" element={<ProtectedRoute role="student"><LessonsPage /></ProtectedRoute>} />
         <Route path="/student/lessons/:id" element={<ProtectedRoute role="student"><LessonViewerPage /></ProtectedRoute>} />
         <Route path="/student/materials" element={<ProtectedRoute role="student"><MaterialsPage /></ProtectedRoute>} />
@@ -72,30 +76,38 @@ const App = () => (
         <Route path="/admin/settings" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/admin/students" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/admin/courses" element={<ProtectedRoute role="admin"><AdminCoursesPage /></ProtectedRoute>} />
-        <Route path="/admin/materials" element={<ProtectedRoute role="admin"><AdminMaterialsPage /></ProtectedRoute>} />
+        <Route path="/admin/materials" element={<ProtectedRoute role="admin"><UnifiedMaterialsPage shell="admin" /></ProtectedRoute>} />
+        <Route path="/admin/materials/:id" element={<ProtectedRoute role="admin"><MaterialViewerPage /></ProtectedRoute>} />
         <Route path="/admin/curriculum" element={<ProtectedRoute role="admin"><AdminCoursesPage /></ProtectedRoute>} />
-        <Route path="/admin/assessments" element={<ProtectedRoute role="admin"><AssessmentCenterPage /></ProtectedRoute>} />
+        <Route path="/admin/quizzes" element={<ProtectedRoute role="admin"><AdminAssessmentManagementPage /></ProtectedRoute>} />
+        <Route path="/admin/assessments" element={<ProtectedRoute role="admin"><AdminAssessmentManagementPage /></ProtectedRoute>} />
         <Route path="/admin/reports" element={<ProtectedRoute role="admin"><AdminProgressPage /></ProtectedRoute>} />
         <Route path="/admin/progress" element={<ProtectedRoute role="admin"><AdminProgressPage /></ProtectedRoute>} />
         <Route path="/admin/analytics" element={<ProtectedRoute role="admin"><AdminAnalyticsPage /></ProtectedRoute>} />
         <Route path="/admin/ai-tutor" element={<ProtectedRoute role="admin"><AdminAiTutorPage /></ProtectedRoute>} />
         <Route path="/admin/competitions" element={<ProtectedRoute role="admin"><AdminCompetitionsPage /></ProtectedRoute>} />
-        <Route path="/admin/content" element={<ProtectedRoute role="admin"><AdminContentPage /></ProtectedRoute>} />
+        <Route path="/admin/content" element={<ProtectedRoute role="admin"><UnifiedCurriculumPage shell="admin" /></ProtectedRoute>} />
+        <Route path="/teacher/materials/:id" element={<ProtectedRoute role="teacher"><MaterialViewerPage /></ProtectedRoute>} />
         <Route path="/teacher" element={<ProtectedRoute role="teacher"><TeacherShell /></ProtectedRoute>}>
           <Route index element={<TeacherDashboard />} />
-          <Route path="classes" element={<ClassesPage />} />
+          <Route path="schools" element={<AdminSchoolsPage mode="teacher" />} />
+          <Route path="classes" element={<AdminSchoolsPage mode="teacher" />} />
           <Route path="classes/:id" element={<ClassDetailsPage />} />
-          <Route path="students" element={<StudentsPage />} />
-          <Route path="attendance" element={<AttendancePage />} />
+          <Route path="students" element={<AdminSchoolsPage mode="teacher" />} />
+          <Route path="attendance" element={<AdminSchoolsPage mode="teacher" />} />
+          <Route path="fees" element={<AdminSchoolsPage mode="teacher" />} />
           <Route path="assignments" element={<AssignmentsPage />} />
-          <Route path="assessments" element={<AssessmentCenterPage />} />
-          <Route path="materials" element={<TeacherMaterialsPage />} />
-          <Route path="curriculum" element={<TeacherCurriculumPage />} />
+          <Route path="quizzes" element={<TeacherQuizAssessmentPage />} />
+          <Route path="assessments" element={<TeacherQuizAssessmentPage />} />
+          <Route path="certificates" element={<TeacherCertificatesPage />} />
+          <Route path="materials" element={<UnifiedMaterialsPage shell="teacher" />} />
+          <Route path="lessons" element={<UnifiedCurriculumPage shell="teacher" />} />
           <Route path="coding" element={<CodingPage />} />
           <Route path="codelab" element={<CodingPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="reports" element={<AnalyticsPage />} />
-          <Route path="messages" element={<MessagesPage />} />
+          <Route path="reports" element={<TeacherReportsPage />} />
+          <Route path="messages" element={<AdminSchoolsPage mode="teacher" />} />
+          <Route path="profile" element={<TeacherProfilePage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

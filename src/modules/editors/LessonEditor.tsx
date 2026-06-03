@@ -26,6 +26,8 @@ export interface LessonEditorProps {
   lesson?: any;
   courses: any[];
   courseTracks?: any[];
+  schools?: any[];
+  classSections?: any[];
   onSave: (data: any) => Promise<void>;
   onCancel: () => void;
   loading?: boolean;
@@ -63,6 +65,7 @@ const formats = [
   "color",
   "background",
 ];
+const NONE_VALUE = "__none__";
 
 /**
  * Shared Lesson/Curriculum Editor
@@ -73,6 +76,8 @@ export const LessonEditor: React.FC<LessonEditorProps> = ({
   lesson,
   courses,
   courseTracks,
+  schools = [],
+  classSections = [],
   onSave,
   onCancel,
   loading,
@@ -91,6 +96,9 @@ export const LessonEditor: React.FC<LessonEditorProps> = ({
     tags: lesson?.tags || [],
     visibility: lesson?.visibility || "teachers",
     status: lesson?.status || "draft",
+    schoolIds: (lesson?.assignments || []).filter((item: any) => item.type === "school").map((item: any) => item.refId) || (lesson?.schoolId ? [lesson.schoolId?._id || lesson.schoolId] : []),
+    gradeLevels: lesson?.gradeLevels || (lesson?.assignments || []).filter((item: any) => item.type === "grade").map((item: any) => item.label),
+    classSectionIds: lesson?.classSectionIds?.map((item: any) => item._id || item) || [],
   });
 
   const [newObjective, setNewObjective] = useState("");
@@ -148,6 +156,17 @@ export const LessonEditor: React.FC<LessonEditorProps> = ({
     }));
   }, []);
 
+  const labelFor = (item: any) => item.name || item.sectionName || [item.grade, item.section].filter(Boolean).join(" - ") || item.title || item._id;
+
+  const toggleArrayValue = (key: "schoolIds" | "gradeLevels" | "classSectionIds", value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [key]: prev[key].includes(value)
+        ? prev[key].filter((item: string) => item !== value)
+        : [...prev[key], value],
+    }));
+  };
+
   const handleSave = async () => {
     if (!formData.title.trim()) {
       toast({ title: "Error", description: "Title is required", variant: "destructive" });
@@ -163,7 +182,15 @@ export const LessonEditor: React.FC<LessonEditorProps> = ({
     }
 
     try {
-      await onSave(formData);
+      await onSave({
+        ...formData,
+        schoolId: formData.schoolIds[0],
+        assignments: [
+          ...formData.schoolIds.map((id) => ({ type: "school", refId: id, label: labelFor(schools.find((school) => school._id === id) || {}) })),
+          ...formData.gradeLevels.map((grade) => ({ type: "grade", label: grade })),
+          ...formData.classSectionIds.map((id) => ({ type: "class", refId: id, label: labelFor(classSections.find((section) => section._id === id) || {}) })),
+        ],
+      });
       toast({ title: "Success", description: "Lesson saved successfully" });
     } catch (error: any) {
       toast({
@@ -244,14 +271,14 @@ export const LessonEditor: React.FC<LessonEditorProps> = ({
               <div>
                 <label className="text-sm font-medium">Course Track</label>
                 <Select
-                  value={formData.courseTrackId}
-                  onValueChange={(value) => setFormData({ ...formData, courseTrackId: value })}
+                  value={formData.courseTrackId || NONE_VALUE}
+                  onValueChange={(value) => setFormData({ ...formData, courseTrackId: value === NONE_VALUE ? "" : value })}
                 >
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Select track (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value={NONE_VALUE}>None</SelectItem>
                     {courseTracks.map((track) => (
                       <SelectItem key={track._id} value={track._id}>
                         {track.trackName}
@@ -262,6 +289,41 @@ export const LessonEditor: React.FC<LessonEditorProps> = ({
               </div>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Access Assignment */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Assign Access</CardTitle>
+          <CardDescription>Select all schools, grades, and classes that can use this lesson</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {schools.length > 0 && (
+            <AssignmentGroup
+              title="Schools"
+              items={schools}
+              values={formData.schoolIds}
+              getLabel={labelFor}
+              onToggle={(id) => toggleArrayValue("schoolIds", id)}
+            />
+          )}
+          <AssignmentGroup
+            title="Grades"
+            items={Array.from({ length: 12 }, (_, index) => ({ _id: `Grade ${index + 1}`, name: `Grade ${index + 1}` }))}
+            values={formData.gradeLevels}
+            getLabel={labelFor}
+            onToggle={(id) => toggleArrayValue("gradeLevels", id)}
+          />
+          {classSections.length > 0 && (
+            <AssignmentGroup
+              title="Classes"
+              items={classSections}
+              values={formData.classSectionIds}
+              getLabel={labelFor}
+              onToggle={(id) => toggleArrayValue("classSectionIds", id)}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -481,5 +543,26 @@ export const LessonEditor: React.FC<LessonEditorProps> = ({
     </div>
   );
 };
+
+function AssignmentGroup({ title, items, values, onToggle, getLabel }: any) {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">{title}</p>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        {items.map((item: any) => (
+          <label key={item._id} className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={values.includes(item._id)}
+              onChange={() => onToggle(item._id)}
+              className="rounded"
+            />
+            <span>{getLabel(item)}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default LessonEditor;

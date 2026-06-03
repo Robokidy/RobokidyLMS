@@ -1,5 +1,18 @@
 const { Schema, model } = require("mongoose");
 
+const assignmentTargetSchema = new Schema(
+  {
+    type: {
+      type: String,
+      enum: ["school", "grade", "class", "course", "student"],
+      required: true
+    },
+    refId: { type: Schema.Types.ObjectId },
+    label: { type: String, default: "" }
+  },
+  { _id: false }
+);
+
 const lessonSchema = new Schema(
   {
     // Core Content
@@ -82,6 +95,8 @@ const lessonSchema = new Schema(
       default: "teachers" 
     },
     accessibleBy: [{ type: Schema.Types.ObjectId, ref: "User" }], // For specific user access
+    assignments: [assignmentTargetSchema],
+    status: { type: String, enum: ["draft", "published", "archived"], default: "draft", index: true },
     
     // Associated Content
     quizzes: [{ type: Schema.Types.ObjectId, ref: "Quiz" }],

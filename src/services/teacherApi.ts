@@ -20,8 +20,14 @@ export const teacherApi = {
   classes(token?: string) {
     return apiFetch("/teacher/classes", {}, token);
   },
+  schools(token?: string) {
+    return apiFetch("/teacher/schools", {}, token);
+  },
   students(token?: string) {
     return apiFetch("/teacher/students", {}, token);
+  },
+  fees(params: QueryParams = {}, token?: string) {
+    return apiFetch(`/teacher/fees${buildQuery(params)}`, {}, token);
   },
   attendance(params: QueryParams = {}, token?: string) {
     return apiFetch(`/teacher/attendance${buildQuery(params)}`, {}, token);

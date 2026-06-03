@@ -9,6 +9,8 @@ const MaterialAnalytics = require("../models/MaterialAnalytics");
 const Quiz = require("../models/Quiz");
 const StudentProgress = require("../models/StudentProgress");
 const ActivityLog = require("../models/ActivityLog");
+const Attendance = require("../models/Attendance");
+const TestAttempt = require("../models/TestAttempt");
 const { ensureBaseCourses } = require("../utils/courses");
 const FeeAccount = require("../models/FeeAccount");
 const { ensureFeeForStudentId, serializeFeeAccount } = require("../utils/feeManager");
@@ -48,6 +50,38 @@ async function getStudentAccess(userId) {
       category: track.category,
       grade: track.grade
     }))
+  };
+}
+
+async function getStudentProfile(userId) {
+  const user = await User.findById(userId)
+    .select("username fullName schoolId classSectionIds grade")
+    .populate({
+      path: "classSectionIds",
+      select: "name grade section teacherIds classTeacherId",
+      populate: [
+        { path: "teacherIds", select: "username fullName" },
+        { path: "classTeacherId", select: "username fullName" }
+      ]
+    })
+    .lean();
+
+  const classes = user?.classSectionIds || [];
+  const teacherMap = new Map();
+  classes.forEach((klass) => {
+    if (klass.classTeacherId) {
+      teacherMap.set(String(klass.classTeacherId._id), klass.classTeacherId.fullName || klass.classTeacherId.username);
+    }
+    (klass.teacherIds || []).forEach((teacher) => {
+      teacherMap.set(String(teacher._id), teacher.fullName || teacher.username);
+    });
+  });
+
+  return {
+    name: user?.fullName || user?.username || "",
+    grade: user?.grade || classes[0]?.grade || "",
+    className: classes.map((klass) => klass.name || [klass.grade, klass.section].filter(Boolean).join(" - ")).filter(Boolean).join(", "),
+    teacherNames: Array.from(teacherMap.values()).filter(Boolean)
   };
 }
 
@@ -139,7 +173,7 @@ async function canAccessLesson(userId, lessonId) {
 router.get("/dashboard", async (req, res) => {
   await ensureBaseCourses();
   const assignedCourses = await getAssignedCourseIds(req.user.id);
-  const [totalLessons, progress, attempts, feeAccount] = await Promise.all([
+  const [totalLessons, progress, attempts, feeAccount, attendanceAgg, assessmentAttempts] = await Promise.all([
     assignedCourses.length ? Lesson.countDocuments({ courseId: { $in: assignedCourses } }) : 0,
     StudentProgress.findOne({ userId: req.user.id }),
     StudentProgress.aggregate([
@@ -147,14 +181,44 @@ router.get("/dashboard", async (req, res) => {
       { $unwind: { path: "$quizAttempts", preserveNullAndEmptyArrays: true } },
       { $group: { _id: null, total: { $sum: "$quizAttempts.attempts" } } }
     ]),
-    FeeAccount.findOne({ studentId: req.user.id }).lean()
+    FeeAccount.findOne({ studentId: req.user.id }).lean(),
+    Attendance.aggregate([{ $match: { studentId: req.user.id } }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
+    TestAttempt.find({ studentId: req.user.id })
+      .populate("testId", "title testType totalMarks passingMarks")
+      .populate("classId", "name grade section")
+      .sort({ createdAt: -1 })
+      .limit(25)
+      .lean()
   ]);
   const fee = feeAccount || await ensureFeeForStudentId(req.user.id);
+  const attendanceTotal = attendanceAgg.reduce((sum, row) => sum + row.count, 0);
+  const presentCount = attendanceAgg.find((row) => row._id === "present")?.count || 0;
+  const assessmentRows = assessmentAttempts.map((attempt) => ({
+    _id: attempt._id,
+    testId: attempt.testId?._id,
+    title: attempt.testId?.title || "Assessment",
+    type: attempt.testId?.testType || "test",
+    className: attempt.classId?.name || "",
+    score: attempt.totalMarksObtained || 0,
+    total: attempt.totalMarks || 0,
+    percentage: Math.round(attempt.percentage || 0),
+    passed: attempt.passed,
+    status: attempt.status,
+    submittedAt: attempt.endTime || attempt.updatedAt,
+    violations: attempt.violationCount || 0
+  }));
+  const completedAssessments = assessmentRows.filter((row) => ["submitted", "evaluated"].includes(row.status));
+  const assessmentAverage = completedAssessments.length
+    ? Math.round(completedAssessments.reduce((sum, row) => sum + row.percentage, 0) / completedAssessments.length)
+    : 0;
 
-  const hasPythonAccess = await hasPythonCourse(req.user.id);
-  const studentAccess = await getStudentAccess(req.user.id);
-  const enabledModules = ["lessons", "materials", "quiz", "tests", ...(hasPythonAccess ? ["codelab"] : [])];
-  const allowedRoutes = ["/student/lessons", "/student/materials", "/student/quizzes", "/student/tests", ...(hasPythonAccess ? ["/student/code"] : [])];
+  const [hasPythonAccess, studentAccess, studentProfile] = await Promise.all([
+    hasPythonCourse(req.user.id),
+    getStudentAccess(req.user.id),
+    getStudentProfile(req.user.id)
+  ]);
+  const enabledModules = ["dashboard", "lessons", "materials", "quiz", "tests", ...(hasPythonAccess ? ["codelab"] : [])];
+  const allowedRoutes = ["/student/dashboard", "/student/lessons", "/student/materials", "/student/quizzes", "/student/tests", ...(hasPythonAccess ? ["/student/code"] : [])];
 
   res.json({
     totalLessons,
@@ -162,9 +226,23 @@ router.get("/dashboard", async (req, res) => {
     quizAttempts: attempts[0]?.total || 0,
     codeRunCount: progress?.codeRunCount || 0,
     hasPythonAccess,
+    studentProfile,
     assignedTracks: studentAccess.assignedTracks,
     assignedCourses: studentAccess.assignedCourses,
     feeAccount: serializeFeeAccount(fee),
+    attendance: {
+      total: attendanceTotal,
+      present: presentCount,
+      absent: attendanceAgg.find((row) => row._id === "absent")?.count || 0,
+      late: attendanceAgg.find((row) => row._id === "late")?.count || 0,
+      percentage: attendanceTotal ? Math.round((presentCount / attendanceTotal) * 100) : 0
+    },
+    assessmentReports: {
+      attempts: assessmentRows.length,
+      averageScore: assessmentAverage,
+      passed: assessmentRows.filter((row) => row.passed).length,
+      rows: assessmentRows
+    },
     enabledModules,
     allowedRoutes
   });

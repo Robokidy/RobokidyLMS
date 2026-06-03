@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { BarChart3, Bell, BookMarked, BookOpen, BookText, Building2, CalendarDays, ClipboardList, CreditCard, LayoutDashboard, Menu, School, Settings, ShieldCheck, Users } from "lucide-react";
+import { BarChart3, Bell, BookMarked, BookOpen, BookText, Building2, CalendarDays, ClipboardList, CreditCard, FileQuestion, LayoutDashboard, Menu, School, Settings, ShieldCheck, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -23,6 +23,7 @@ const navSections = [
       { label: "Curriculum", href: "/admin/curriculum", icon: BookOpen },
       { label: "Lessons", href: "/admin/content", icon: BookText },
       { label: "Materials", href: "/admin/materials", icon: BookMarked },
+      { label: "Quizzes", href: "/admin/quizzes", icon: FileQuestion },
       { label: "Assessments", href: "/admin/assessments", icon: ClipboardList }
     ]
   },

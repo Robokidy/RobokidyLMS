@@ -120,6 +120,7 @@ const questionSchema = new mongoose.Schema(
     topic: String,
     category: String,
     courseId: { type: mongoose.Schema.Types.ObjectId, ref: "Course" },
+    lessonId: { type: mongoose.Schema.Types.ObjectId, ref: "Lesson" },
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: "School" },
     classSectionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" }],
     active: { type: Boolean, default: true },

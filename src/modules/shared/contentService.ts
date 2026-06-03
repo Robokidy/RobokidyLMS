@@ -1,4 +1,4 @@
-import { apiFetch } from "@/api/client";
+import { API_BASE, apiFetch } from "@/api/client";
 
 /**
  * Unified Content Service
@@ -8,6 +8,11 @@ import { apiFetch } from "@/api/client";
 
 export interface ContentFilter {
   courseId?: string;
+  schoolId?: string;
+  classSectionId?: string;
+  grade?: string;
+  difficulty?: string;
+  visibility?: string;
   search?: string;
   status?: string;
   type?: string;
@@ -35,6 +40,11 @@ export const LessonService = {
   async getAll(token: string, filters: ContentFilter = {}): Promise<PaginatedResponse<any>> {
     const params = new URLSearchParams();
     if (filters.courseId) params.append("courseId", filters.courseId);
+    if (filters.schoolId) params.append("schoolId", filters.schoolId);
+    if (filters.classSectionId) params.append("classSectionId", filters.classSectionId);
+    if (filters.grade) params.append("grade", filters.grade);
+    if (filters.difficulty) params.append("difficulty", filters.difficulty);
+    if (filters.visibility) params.append("visibility", filters.visibility);
     if (filters.search) params.append("search", filters.search);
     if (filters.status) params.append("status", filters.status);
     if (filters.page) params.append("page", String(filters.page));
@@ -131,8 +141,32 @@ export const MaterialService = {
   /**
    * Create material
    */
-  async create(data: any, token: string): Promise<any> {
-    return apiFetch(`/materials/upload`, { method: "POST", body: data }, token);
+  async create(data: any, token: string, onProgress?: (progress: number) => void): Promise<any> {
+    if (!(data instanceof FormData) || !onProgress) {
+      return apiFetch(`/materials/upload`, { method: "POST", body: data }, token);
+    }
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}/materials/upload`);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+      };
+      xhr.onload = () => {
+        const content = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress(100);
+          resolve(content);
+        } else {
+          reject(new Error(content.message || content.error || "Upload failed"));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Upload failed. Check your API URL and network connection."));
+      xhr.ontimeout = () => reject(new Error("Upload timed out. Please try again."));
+      xhr.timeout = 10 * 60 * 1000;
+      xhr.send(data);
+    });
   },
 
   /**

@@ -125,7 +125,10 @@ export default function MaterialViewerPage() {
     if (!id) return;
     let objectUrl = "";
 
-    apiFetch(`/student/materials/${id}`, {}, token)
+    const role = user?.role || "student";
+    const materialEndpoint = role === "student" ? `/student/materials/${id}` : `/materials/${id}`;
+
+    apiFetch(materialEndpoint, {}, token)
       .then(async (data) => {
         setMaterial(data);
         const filePath = String(data.fileUrl || "").replace(/^\/api/, "");
@@ -142,7 +145,7 @@ export default function MaterialViewerPage() {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       setSecureFileUrl("");
     };
-  }, [id, token]);
+  }, [id, token, user?.role]);
 
   useEffect(() => {
     window.sessionStorage.setItem("secureViewerActive", "1");
@@ -266,7 +269,8 @@ export default function MaterialViewerPage() {
     };
   }, []);
 
-  const watermark = material?.viewer?.watermark || `${user?.username || "student"} | protected`;
+  const watermark = material?.viewer?.watermark || `${user?.username || "user"} | protected`;
+  const backPath = user?.role === "admin" ? "/admin/materials" : user?.role === "teacher" ? "/teacher/materials" : "/student/materials";
   const blockPointerEvent = (event: React.SyntheticEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -284,7 +288,7 @@ export default function MaterialViewerPage() {
       <header className="h-16 px-4 border-b border-white/10 flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <Button asChild variant="outline" size="sm" className="bg-transparent text-white border-white/20 hover:bg-white/10">
-            <Link to="/student/materials"><ArrowLeft className="h-4 w-4 mr-2" /> Back</Link>
+            <Link to={backPath}><ArrowLeft className="h-4 w-4 mr-2" /> Back</Link>
           </Button>
           <div className="min-w-0">
             <h1 className="font-semibold truncate">{material?.title || "Secure Viewer"}</h1>
