@@ -1,46 +1,52 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { BarChart3, Bell, BookMarked, BookOpen, BookText, Building2, CalendarDays, ClipboardList, CreditCard, FileQuestion, LayoutDashboard, Menu, School, Settings, ShieldCheck, Users } from "lucide-react";
+import { Award, BarChart3, Bell, BookMarked, BookOpen, BookText, Building2, CalendarDays, ClipboardList, CreditCard, FileQuestion, FileSpreadsheet, LayoutDashboard, Menu, School, Settings, ShieldCheck, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import DarkModeToggle from "@/components/layout/DarkModeToggle";
 
-const navSections = [
-  { label: "Executive", items: [{ label: "CEO Dashboard", href: "/admin", icon: LayoutDashboard }] },
-  {
-    label: "Organization",
-    items: [
-      { label: "Schools", href: "/admin/schools", icon: Building2 },
-      { label: "Teachers", href: "/admin/teachers", icon: ShieldCheck },
-      { label: "Students", href: "/admin/students", icon: Users },
-      { label: "Classes", href: "/admin/classes", icon: School }
-    ]
-  },
-  {
-    label: "Learning",
-    items: [
-      { label: "Curriculum", href: "/admin/curriculum", icon: BookOpen },
-      { label: "Lessons", href: "/admin/content", icon: BookText },
-      { label: "Materials", href: "/admin/materials", icon: BookMarked },
-      { label: "Quizzes", href: "/admin/quizzes", icon: FileQuestion },
-      { label: "Assessments", href: "/admin/assessments", icon: ClipboardList }
-    ]
-  },
-  {
-    label: "Operations",
-    items: [
-      { label: "Attendance", href: "/admin/attendance", icon: CalendarDays },
-      { label: "Fees", href: "/admin/fees", icon: CreditCard }
-    ]
-  },
-  { label: "Communication", items: [{ label: "Notifications", href: "/admin/notifications", icon: Bell }] },
-  { label: "Reports", items: [{ label: "Analytics", href: "/admin/analytics", icon: BarChart3 }] },
-  { label: "Settings", items: [{ label: "System", href: "/admin/settings", icon: Settings }] }
-];
+function navForRole(role?: string) {
+  const base = role === "cto" ? "/cto" : "/admin";
+  return [
+    { label: "Executive", items: [{ label: role === "cto" ? "CTO Dashboard" : "CEO Dashboard", href: base, icon: LayoutDashboard }] },
+    {
+      label: "Organization",
+      items: [
+        { label: "Schools", href: `${base}/schools`, icon: Building2 },
+        { label: "Teachers", href: `${base}/teachers`, icon: ShieldCheck },
+        { label: "Students", href: `${base}/students`, icon: Users },
+        { label: "Classes", href: `${base}/classes`, icon: School }
+      ]
+    },
+    {
+      label: "Learning",
+      items: [
+        { label: "Curriculum", href: `${base}/curriculum`, icon: BookOpen },
+        { label: "Lessons", href: `${base}/content`, icon: BookText },
+        { label: "Materials", href: `${base}/materials`, icon: BookMarked },
+        { label: "Quiz Center", href: `${base}/quizzes`, icon: FileQuestion },
+        { label: "Assessment Center", href: `${base}/assessments`, icon: ClipboardList },
+        ...(role === "cto" ? [{ label: "Certificates", href: `${base}/certificates`, icon: Award }] : [])
+      ]
+    },
+    {
+      label: "Operations",
+      items: [
+        { label: "Attendance", href: `${base}/attendance`, icon: CalendarDays },
+        ...(role === "admin" ? [{ label: "Fees", href: `${base}/fees`, icon: CreditCard }] : [])
+      ]
+    },
+    { label: "Communication", items: [{ label: "Notifications", href: `${base}/notifications`, icon: Bell }] },
+    { label: "Reports", items: [{ label: "School Reports", href: `${base}/reports`, icon: FileSpreadsheet }, { label: "Analytics", href: `${base}/analytics`, icon: BarChart3 }] },
+    { label: "Settings", items: [{ label: "System", href: `${base}/settings`, icon: Settings }] }
+  ];
+}
 
 function Sidebar() {
   const location = useLocation();
+  const { user } = useAuth();
+  const sections = navForRole(user?.role);
 
   return (
     <aside className="hidden lg:flex lg:w-72 lg:flex-col border-r bg-white/80 dark:bg-slate-950/60 backdrop-blur">
@@ -51,7 +57,7 @@ function Sidebar() {
         </div>
       </div>
       <nav className="p-4 space-y-5 overflow-y-auto">
-        {navSections.map((section) => (
+        {sections.map((section) => (
           <div key={section.label}>
             <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</p>
             <div className="space-y-1">
@@ -83,6 +89,7 @@ function Sidebar() {
 
 export default function AdminShell({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   const { user, logout } = useAuth();
+  const mobileSections = navForRole(user?.role);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
@@ -103,7 +110,7 @@ export default function AdminShell({ title, subtitle, children }: { title: strin
                     <p className="text-lg font-bold">Robokidy LMS</p>
                   </div>
                   <nav className="p-4 space-y-4">
-                    {navSections.map((section) => (
+                    {mobileSections.map((section) => (
                       <div key={section.label}>
                         <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</p>
                         {section.items.map((item) => {

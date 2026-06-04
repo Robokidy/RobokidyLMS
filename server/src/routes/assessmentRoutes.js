@@ -42,7 +42,7 @@ function toArray(value) {
 
 function ensureStaff(req, res) {
   const { role } = scope(req);
-  if (role === "admin" || role === "teacher") return true;
+  if (["admin", "cto"].includes(role) || role === "teacher") return true;
   res.status(403).json({ message: "Only admins and teachers can modify assessments" });
   return false;
 }
@@ -133,8 +133,8 @@ function testAccessFilter(req) {
 
 router.get("/meta", async (req, res) => {
   const current = scope(req);
-  const classFilter = current.role === "admin" ? {} : { _id: { $in: current.classSectionIds } };
-  const schoolFilter = current.role === "admin" ? { active: { $ne: false } } : { _id: { $in: [current.schoolId, ...current.schoolIds].filter(Boolean) } };
+  const classFilter = ["admin", "cto"].includes(current.role) ? {} : { _id: { $in: current.classSectionIds } };
+  const schoolFilter = ["admin", "cto"].includes(current.role) ? { active: { $ne: false } } : { _id: { $in: [current.schoolId, ...current.schoolIds].filter(Boolean) } };
   const [courses, classes, schools, lessons] = await Promise.all([
     Course.find({ active: true }).select("name slug active").sort({ name: 1 }).lean(),
     ClassSection.find(classFilter).select("name grade section schoolId courseIds").sort({ grade: 1, section: 1 }).lean(),
@@ -146,7 +146,7 @@ router.get("/meta", async (req, res) => {
 
 router.get("/summary", async (req, res) => {
   const testFilter = testAccessFilter(req);
-  const questionFilter = scope(req).role === "admin" ? {} : { $or: [{ createdBy: scope(req).id }, { schoolId: scope(req).schoolId }, { schoolId: null }] };
+  const questionFilter = ["admin", "cto"].includes(scope(req).role) ? {} : { $or: [{ createdBy: scope(req).id }, { schoolId: scope(req).schoolId }, { schoolId: null }] };
   const [questions, tests, attempts, violations] = await Promise.all([
     Question.countDocuments(questionFilter),
     Test.countDocuments(testFilter),
@@ -254,7 +254,7 @@ router.post("/tests", async (req, res) => {
     subject: req.body.subject || req.body.courseName || "General",
     testType: req.body.testType || "quiz",
     courseId: req.body.courseId || undefined,
-    schoolId: current.role === "admin" ? (req.body.schoolId || current.schoolId) : current.schoolId,
+    schoolId: ["admin", "cto"].includes(current.role) ? (req.body.schoolId || current.schoolId) : current.schoolId,
     classSectionIds,
     grade: req.body.grade || "",
     totalMarks,
@@ -580,3 +580,5 @@ router.post("/attempts/:id/submit", async (req, res) => {
 });
 
 module.exports = router;
+
+

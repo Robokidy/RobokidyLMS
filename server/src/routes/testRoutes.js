@@ -20,7 +20,7 @@ router.get("/tests", auth, async (req, res) => {
 
     if (role === "teacher") {
       query = { createdBy: userId };
-    } else if (role === "admin") {
+    } else if (["admin", "cto"].includes(role)) {
       query = { schoolId };
     } else if (role === "student") {
       // Students see assigned tests only - handled via TestAssignment
@@ -646,3 +646,5 @@ function evaluateAnswer(answer, question) {
 }
 
 module.exports = router;
+
+

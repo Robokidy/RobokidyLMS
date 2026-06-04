@@ -34,7 +34,7 @@ function getUserScope(user) {
 function buildAccessFilter(scope, baseFilter = {}) {
   const filter = { ...baseFilter, active: true };
 
-  if (scope.role === "admin") {
+  if (["admin", "cto"].includes(scope.role)) {
     // Admin sees everything
     return filter;
   }
@@ -76,7 +76,7 @@ function buildAccessFilter(scope, baseFilter = {}) {
  * Authorization check
  */
 function canModify(scope, createdById) {
-  if (scope.role === "admin") return true;
+  if (["admin", "cto"].includes(scope.role)) return true;
   if (scope.role === "teacher") return true;
   return false;
 }
@@ -102,7 +102,7 @@ router.get("/lessons", async (req, res) => {
     let filter = buildAccessFilter(scope);
 
     if (courseId) filter.courseId = courseId;
-    if (schoolId && (scope.role === "admin" || String(scope.schoolId) === String(schoolId))) {
+    if (schoolId && (["admin", "cto"].includes(scope.role) || String(scope.schoolId) === String(schoolId))) {
       addAndCondition(filter, {
         $or: [
           { schoolId },
@@ -129,8 +129,8 @@ router.get("/lessons", async (req, res) => {
     if (difficulty) filter.difficulty = difficulty;
     if (module) filter.module = module;
     if (chapter) filter.chapter = chapter;
-    if (visibility && (scope.role === "admin" || scope.role === "teacher")) filter.visibility = visibility;
-    if (status && (scope.role === "admin" || scope.role === "teacher")) {
+    if (visibility && (["admin", "cto"].includes(scope.role) || scope.role === "teacher")) filter.visibility = visibility;
+    if (status && (["admin", "cto"].includes(scope.role) || scope.role === "teacher")) {
       filter.status = status;
     } else if (scope.role === "student") {
       filter.isPublished = true;
@@ -251,8 +251,8 @@ router.post("/lessons", async (req, res) => {
     }
 
     // Teachers can only create in their school and assigned classes
-    const finalSchoolId = scope.role === "admin" ? req.body.schoolId : scope.schoolId;
-    const finalClassSectionIds = scope.role === "admin"
+    const finalSchoolId = ["admin", "cto"].includes(scope.role) ? req.body.schoolId : scope.schoolId;
+    const finalClassSectionIds = ["admin", "cto"].includes(scope.role)
       ? (classSectionIds || [])
       : classSectionIds ? classSectionIds.filter(id => scope.classSectionIds.includes(String(id))) : [];
 
@@ -426,7 +426,7 @@ router.delete("/lessons/:id", async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    if (scope.role === "admin") {
+    if (["admin", "cto"].includes(scope.role)) {
       // Admin can hard delete
       await Lesson.deleteOne({ _id: req.params.id });
     } else {
@@ -635,7 +635,7 @@ router.delete("/materials/:id", async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    if (scope.role === "admin") {
+    if (["admin", "cto"].includes(scope.role)) {
       await Material.deleteOne({ _id: req.params.id });
     } else {
       material.active = false;
@@ -930,8 +930,8 @@ router.post("/assignments", async (req, res) => {
       return res.status(400).json({ message: "Title and dueDate are required" });
     }
 
-    const finalSchoolId = scope.role === "admin" ? req.body.schoolId : scope.schoolId;
-    const finalClassSectionIds = scope.role === "admin" 
+    const finalSchoolId = ["admin", "cto"].includes(scope.role) ? req.body.schoolId : scope.schoolId;
+    const finalClassSectionIds = ["admin", "cto"].includes(scope.role) 
       ? (classSectionIds || []) 
       : classSectionIds ? classSectionIds.filter(id => scope.classSectionIds.includes(String(id))) : [];
 
@@ -1019,7 +1019,7 @@ router.delete("/assignments/:id", async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    if (scope.role === "admin") {
+    if (["admin", "cto"].includes(scope.role)) {
       await Assignment.deleteOne({ _id: req.params.id });
     } else {
       assignment.active = false;
@@ -1034,3 +1034,5 @@ router.delete("/assignments/:id", async (req, res) => {
 });
 
 module.exports = router;
+
+

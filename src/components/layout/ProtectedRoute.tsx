@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 
-type Role = "admin" | "teacher" | "student" | "parent";
+type Role = "admin" | "cto" | "teacher" | "student" | "parent";
 
 export default function ProtectedRoute({ children, role }: { children: JSX.Element; role?: Role | Role[] }) {
   const { token, user } = useAuth();

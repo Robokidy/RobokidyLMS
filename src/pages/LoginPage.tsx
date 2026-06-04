@@ -22,6 +22,7 @@ export default function LoginPage() {
       setAuth(data.token, data.user);
       if (data.user.firstLogin) return navigate("/change-password");
       if (data.user.role === "admin") return navigate("/admin");
+      if (data.user.role === "cto") return navigate("/cto");
       if (data.user.role === "teacher") return navigate("/teacher");
       navigate("/student");
     } catch (err: any) {

@@ -37,7 +37,7 @@ export default function ChangePasswordPage() {
       await apiFetch("/auth/change-password", { method: "POST", body: JSON.stringify({ password, confirmPassword }) }, token);
       if (user) setAuth(token, { ...user, firstLogin: false });
       setMsg("Password changed successfully.");
-      navigate(user?.role === "admin" ? "/admin" : user?.role === "teacher" ? "/teacher" : "/student/lessons");
+      navigate(user?.role === "admin" ? "/admin" : user?.role === "cto" ? "/cto" : user?.role === "teacher" ? "/teacher" : "/student/lessons");
     } catch (err: any) {
       setError(err.message || "Failed to update password.");
     } finally {

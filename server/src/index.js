@@ -5,6 +5,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const path = require("path");
 const connectDB = require("./config/db");
+const User = require("./models/User");
 
 const requiredEnv = ["MONGODB_URI", "JWT_SECRET"];
 const recommendedEnv = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "NODE_ENV", "JUDGE0_API_KEY", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"];
@@ -38,6 +39,7 @@ const courseTrackRoutes = require("./routes/courseTrackRoutes");
 const contentRoutes = require("./routes/contentRoutes");
 const assessmentRoutes = require("./routes/assessmentRoutes");
 const materialRoutes = require("./routes/materialRoutes");
+const academicReportRoutes = require("./routes/academicReportRoutes");
 
 function optionalRoute(path) {
   try {
@@ -100,6 +102,7 @@ app.use("/api/code", codeRoutes);
 app.use("/api/materials", materialRoutes);
 app.use("/api/content", contentRoutes);
 app.use("/api/assessments", assessmentRoutes);
+app.use("/api/reports", academicReportRoutes);
 if (feeRoutes) app.use("/api/fees", feeRoutes);
 if (examRoutes) app.use("/api/exams", examRoutes);
 if (testRoutes) app.use("/api/tests", testRoutes);
@@ -120,8 +123,25 @@ app.use((error, _req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 5000;
+
+async function ensureDefaultCtoAccount() {
+  const existing = await User.findOne({ $or: [{ role: "cto" }, { username: "cto" }, { email: "cto@robokidy.com" }] });
+  if (existing) return;
+  await User.create({
+    username: "cto",
+    email: "cto@robokidy.com",
+    password: "CtoRobokidy",
+    role: "cto",
+    fullName: "Chief Technology Officer",
+    active: true,
+    firstLogin: true
+  });
+  console.log("Default CTO account created");
+}
+
 connectDB()
-  .then(() => {
+  .then(async () => {
+    await ensureDefaultCtoAccount();
     const server = app.listen(PORT, () => console.log(`API running on ${PORT}`));
     server.on("error", (error) => {
       if (error.code === "EADDRINUSE") {

@@ -76,7 +76,7 @@ function normalizeAssignments(assignments, scope) {
     return parsed
         .filter((assignment) => assignment && assignment.type && (assignment.type === "grade" ? assignment.label : assignment.refId))
         .filter((assignment) => {
-            if (scope.role === "admin") return true;
+            if (["admin", "cto"].includes(scope.role)) return true;
             if (assignment.type === "class") return scope.classSectionIds.includes(String(assignment.refId));
             if (assignment.type === "course") return scope.assignedCourses.includes(String(assignment.refId));
             if (assignment.type === "school") return String(assignment.refId) === String(scope.schoolId);
@@ -94,13 +94,13 @@ function normalizeAssignments(assignments, scope) {
 }
 
 function canViewMaterial(scope, material) {
-    if (scope.role === "admin") return true;
+    if (["admin", "cto"].includes(scope.role)) return true;
     if (scope.role === "teacher") return true;
     return false;
 }
 
 function canEditMaterial(scope, material) {
-    if (scope.role === "admin") return true;
+    if (["admin", "cto"].includes(scope.role)) return true;
     if (scope.role === "teacher") return true;
     return false;
 }
@@ -111,7 +111,7 @@ function buildListFilter(scope, query) {
     if (query.search) filter.$text = { $search: query.search };
     if (query.type) filter.type = query.type;
     if (query.courseId) filter.courseId = query.courseId;
-    if (query.schoolId && scope.role === "admin") filter.schoolId = query.schoolId;
+    if (query.schoolId && ["admin", "cto"].includes(scope.role)) filter.schoolId = query.schoolId;
     if (query.status) filter.status = query.status;
     if (query.grade) filter.grade = query.grade;
     if (query.classSectionId) filter.classSectionIds = query.classSectionId;
@@ -219,7 +219,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 
         const thumbnailUrl = generateThumbnailUrl(cloudResult.public_id, resourceType) || "";
 
-        const finalSchoolId = scope.role === "admin" ? (schoolId || undefined) : scope.schoolId;
+        const finalSchoolId = ["admin", "cto"].includes(scope.role) ? (schoolId || undefined) : scope.schoolId;
         let finalClassSectionIds = parseArray(classSectionIds);
         if (scope.role === "teacher") {
             finalClassSectionIds = finalClassSectionIds.filter((id) =>
@@ -429,7 +429,7 @@ router.put("/:id", async (req, res) => {
         if (language) material.language = language;
         if (classSectionIds !== undefined) material.classSectionIds = parseArray(classSectionIds);
         if (assignments !== undefined) material.assignments = normalizeAssignments(assignments, scope);
-        if (schoolId && scope.role === "admin") material.schoolId = schoolId;
+        if (schoolId && ["admin", "cto"].includes(scope.role)) material.schoolId = schoolId;
 
         if (isPublished !== undefined && !status) {
             material.status = isPublished ? "published" : "draft";
@@ -622,7 +622,7 @@ router.post("/:id/assign", async (req, res) => {
         if (visibility) material.visibility = visibility;
 
         // Auto-derive schoolId from first classSection if admin
-        if (classSectionIds && classSectionIds.length && !material.schoolId && scope.role === "admin") {
+        if (classSectionIds && classSectionIds.length && !material.schoolId && ["admin", "cto"].includes(scope.role)) {
             const cls = await ClassSection.findById(classSectionIds[0]).select("schoolId").lean();
             if (cls) material.schoolId = cls.schoolId;
         }
@@ -732,3 +732,5 @@ router.post("/:id/track-view", async (req, res) => {
 });
 
 module.exports = router;
+
+

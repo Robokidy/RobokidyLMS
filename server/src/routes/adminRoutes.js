@@ -34,7 +34,7 @@ const {
 } = require("../utils/feeManager");
 
 const router = express.Router();
-router.use(auth, requireRole("admin"));
+router.use(auth, requireRole("admin", "cto"));
 
 const MATERIAL_TYPES = ["pdf", "book", "notes", "video"];
 const LANGUAGES = ["en", "ta", "both"];
@@ -589,7 +589,17 @@ router.delete("/teachers/:id", async (req, res) => {
   res.json({ message: "Teacher deactivated" });
 });
 
-router.get("/fees", async (req, res) => {
+function requireAdmin(req, res, next) {
+  if (req.user?.role !== "admin") return res.status(403).json({ message: "Fee management is restricted to Admin users" });
+  next();
+}
+
+function requireAdminOrCto(req, res, next) {
+  if (!["admin", "cto"].includes(req.user?.role)) return res.status(403).json({ message: "Fee status updates require Admin or CTO access" });
+  next();
+}
+
+router.get("/fees", requireAdmin, async (req, res) => {
   const filter = {};
   if (req.query.schoolId) filter.schoolId = req.query.schoolId;
   if (req.query.classSectionId) filter.classSectionId = req.query.classSectionId;
@@ -600,7 +610,7 @@ router.get("/fees", async (req, res) => {
   res.json(rows.filter((row) => row.studentId?.active !== false).map(serializeFeeAccount));
 });
 
-router.post("/fees", async (req, res) => {
+router.post("/fees", requireAdmin, async (req, res) => {
   const totalFees = Number(req.body.totalFees || 0);
   const paidAmount = Number(req.body.paidAmount || 0);
   const status = normalizeFeeStatus(totalFees, paidAmount, req.body.dueDate);
@@ -627,7 +637,7 @@ router.post("/fees", async (req, res) => {
   res.status(201).json(serializeFeeAccount(fee));
 });
 
-router.put("/fees/:id", async (req, res) => {
+router.put("/fees/:id", requireAdmin, async (req, res) => {
   const totalFees = Number(req.body.totalFees || 0);
   const paidAmount = Number(req.body.paidAmount || 0);
   const fee = await FeeAccount.findByIdAndUpdate(
@@ -654,7 +664,7 @@ router.put("/fees/:id", async (req, res) => {
   res.json(serializeFeeAccount(fee));
 });
 
-router.post("/fees/:id/payments", async (req, res) => {
+router.post("/fees/:id/payments", requireAdmin, async (req, res) => {
   try {
     const fee = await recordPayment({
       feeAccountId: req.params.id,
@@ -673,7 +683,7 @@ router.post("/fees/:id/payments", async (req, res) => {
   }
 });
 
-router.delete("/fees/:id", async (req, res) => {
+router.delete("/fees/:id", requireAdmin, async (req, res) => {
   const fee = await FeeAccount.findByIdAndDelete(req.params.id);
   if (!fee) return res.status(404).json({ message: "Fee account not found" });
   await ActivityLog.create({ userId: req.user.id, action: "fee_account_deleted", meta: { feeAccountId: fee._id } });
@@ -854,6 +864,46 @@ router.get("/teacher-workforce/reports", async (req, res) => {
 router.get("/audit-logs", async (_req, res) => {
   const logs = await ActivityLog.find({}).sort({ createdAt: -1 }).limit(300).populate("userId", "username role").lean();
   res.json(logs.map((log) => ({ ...log, username: log.userId?.username || "system", role: log.userId?.role || "" })));
+});
+
+router.get("/accounts", requireAdmin, async (req, res) => {
+  const filter = {};
+  if (req.query.role) filter.role = req.query.role;
+  if (req.query.active === "true") filter.active = true;
+  if (req.query.active === "false") filter.active = false;
+  if (req.query.search) {
+    const pattern = new RegExp(String(req.query.search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [{ username: pattern }, { fullName: pattern }, { email: pattern }, { studentId: pattern }, { employeeId: pattern }];
+  }
+  const users = await User.find(filter)
+    .select("username fullName email role active firstLogin schoolId classSectionIds studentId employeeId createdAt updatedAt")
+    .populate("schoolId", "name code")
+    .populate("classSectionIds", "name grade section")
+    .sort({ role: 1, fullName: 1, username: 1 })
+    .limit(500)
+    .lean();
+  res.json(users);
+});
+
+router.post("/accounts/:id/reset-password", requireAdmin, async (req, res) => {
+  const account = await User.findById(req.params.id);
+  if (!account) return res.status(404).json({ message: "Account not found" });
+  if (account.role === "admin") return res.status(403).json({ message: "Admin account passwords must be changed by the account owner" });
+
+  const tempPassword = generateTempPassword();
+  account.password = tempPassword;
+  account.firstLogin = true;
+  account.active = true;
+  await account.save();
+  await ActivityLog.create({ userId: req.user.id, action: "account_password_reset", meta: { accountId: account._id, role: account.role } });
+
+  res.json({
+    username: account.username,
+    role: account.role,
+    tempPassword,
+    firstLogin: account.firstLogin,
+    message: "Temporary password generated. User must change password after login."
+  });
 });
 
 router.post("/students", async (req, res) => {
@@ -1063,7 +1113,7 @@ router.put("/students/:id/transfer", async (req, res) => {
   res.json(await student.populate([{ path: "schoolId", select: "name code" }, { path: "classSectionIds", select: "name grade section" }]));
 });
 
-router.put("/students/:id/fees", async (req, res) => {
+router.put("/students/:id/fees", requireAdminOrCto, async (req, res) => {
   const student = await User.findOne({ _id: req.params.id, role: "student" });
   if (!student) return res.status(404).json({ message: "Student not found" });
   const status = feeStatusFromInput(req.body.status || req.body.feeStatus);
@@ -1081,7 +1131,7 @@ router.put("/students/:id/fees", async (req, res) => {
       totalFees,
       paidAmount,
       dueDate: req.body.dueDate || undefined,
-      status: normalizeFeeStatus(totalFees, paidAmount, req.body.dueDate),
+      status,
       customOverride: true,
       updatedBy: req.user.id
     },

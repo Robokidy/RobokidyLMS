@@ -6,6 +6,12 @@ const Quiz = require("./models/Quiz");
 const { ensureBaseCourses } = require("./utils/courses");
 const { DEFAULT_FIRST_PASSWORD } = require("./utils/password");
 
+const CTO_DEFAULT = {
+  username: "cto",
+  email: "cto@robokidy.com",
+  password: "CtoRobokidy"
+};
+
 const topics = [
   "Python Introduction",
   "Python History",
@@ -94,6 +100,29 @@ const mkQuestions = (topic) => questionBank[topic] || [];
     admin.firstLogin = true;
     await admin.save();
     console.log("Admin updated");
+  }
+
+  let cto = await User.findOne({ role: "cto" });
+  if (!cto) {
+    cto = await User.create({
+      username: CTO_DEFAULT.username,
+      email: CTO_DEFAULT.email,
+      password: CTO_DEFAULT.password,
+      role: "cto",
+      active: true,
+      firstLogin: true,
+      fullName: "Chief Technology Officer"
+    });
+    console.log("CTO created");
+  } else {
+    cto.username = CTO_DEFAULT.username;
+    cto.email = CTO_DEFAULT.email;
+    cto.password = CTO_DEFAULT.password;
+    cto.active = true;
+    cto.firstLogin = true;
+    cto.fullName = cto.fullName || "Chief Technology Officer";
+    await cto.save();
+    console.log("CTO updated");
   }
 
   const courses = await ensureBaseCourses();

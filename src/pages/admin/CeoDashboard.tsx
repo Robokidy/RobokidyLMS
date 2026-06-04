@@ -27,7 +27,7 @@ function displayValue(stats: any, card: any) {
 }
 
 export default function CeoDashboard() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,13 +57,14 @@ export default function CeoDashboard() {
     () => performance.map((row, index) => ({ name: `W${index + 1}`, students: 40 + index * 9 + Math.round(row.progress / 10), revenue: 20 + index * 6 + Math.round(row.quiz / 12) })),
     [performance]
   );
+  const visibleKpis = user?.role === "cto" ? kpis.filter((card) => card.key !== "pendingFees") : kpis;
 
   return (
-    <AdminShell title="CEO Dashboard" subtitle="Executive health across schools, revenue, attendance, assessments, and learning operations">
+    <AdminShell title={user?.role === "cto" ? "CTO Dashboard" : "CEO Dashboard"} subtitle={user?.role === "cto" ? "Operational command center for teachers, curriculum, academic delivery, and reports" : "Executive health across schools, revenue, attendance, assessments, and learning operations"}>
       {error && <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((card) => {
+        {visibleKpis.map((card) => {
           const Icon = card.icon;
           return (
             <Card key={card.key} className="rounded-lg shadow-sm">

@@ -25,6 +25,8 @@ import AdminSchoolsPage from "@/pages/admin/AdminSchoolsPage";
 import AdminAiTutorPage from "@/pages/admin/AdminAiTutorPage";
 import AdminCompetitionsPage from "@/pages/admin/AdminCompetitionsPage";
 import AdminAssessmentManagementPage from "@/pages/admin/AdminAssessmentManagementPage";
+import AdminSchoolReportsPage from "@/pages/admin/AdminSchoolReportsPage";
+import AdminCertificatesPage from "@/pages/admin/AdminCertificatesPage";
 import AssessmentCenterPage from "@/pages/assessment/AssessmentCenterPage";
 import AssessmentAttemptPage from "@/pages/assessment/AssessmentAttemptPage";
 import CeoDashboard from "@/pages/admin/CeoDashboard";
@@ -82,12 +84,34 @@ const App = () => (
         <Route path="/admin/curriculum" element={<ProtectedRoute role="admin"><AdminCoursesPage /></ProtectedRoute>} />
         <Route path="/admin/quizzes" element={<ProtectedRoute role="admin"><AdminAssessmentManagementPage /></ProtectedRoute>} />
         <Route path="/admin/assessments" element={<ProtectedRoute role="admin"><AdminAssessmentManagementPage /></ProtectedRoute>} />
-        <Route path="/admin/reports" element={<ProtectedRoute role="admin"><AdminProgressPage /></ProtectedRoute>} />
+        <Route path="/admin/reports" element={<ProtectedRoute role="admin"><AdminSchoolReportsPage /></ProtectedRoute>} />
         <Route path="/admin/progress" element={<ProtectedRoute role="admin"><AdminProgressPage /></ProtectedRoute>} />
         <Route path="/admin/analytics" element={<ProtectedRoute role="admin"><AdminAnalyticsPage /></ProtectedRoute>} />
         <Route path="/admin/ai-tutor" element={<ProtectedRoute role="admin"><AdminAiTutorPage /></ProtectedRoute>} />
         <Route path="/admin/competitions" element={<ProtectedRoute role="admin"><AdminCompetitionsPage /></ProtectedRoute>} />
         <Route path="/admin/content" element={<ProtectedRoute role="admin"><UnifiedCurriculumPage shell="admin" /></ProtectedRoute>} />
+        <Route path="/cto" element={<ProtectedRoute role="cto"><CeoDashboard /></ProtectedRoute>} />
+        <Route path="/cto/schools" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
+        <Route path="/cto/teachers" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
+        <Route path="/cto/classes" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
+        <Route path="/cto/students" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
+        <Route path="/cto/attendance" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
+        <Route path="/cto/fees" element={<ProtectedRoute role="cto"><Navigate to="/cto/students" replace /></ProtectedRoute>} />
+        <Route path="/cto/notifications" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
+        <Route path="/cto/settings" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
+        <Route path="/cto/courses" element={<ProtectedRoute role="cto"><AdminCoursesPage /></ProtectedRoute>} />
+        <Route path="/cto/materials" element={<ProtectedRoute role="cto"><UnifiedMaterialsPage shell="admin" /></ProtectedRoute>} />
+        <Route path="/cto/materials/:id" element={<ProtectedRoute role="cto"><MaterialViewerPage /></ProtectedRoute>} />
+        <Route path="/cto/curriculum" element={<ProtectedRoute role="cto"><AdminCoursesPage /></ProtectedRoute>} />
+        <Route path="/cto/quizzes" element={<ProtectedRoute role="cto"><AdminAssessmentManagementPage /></ProtectedRoute>} />
+        <Route path="/cto/assessments" element={<ProtectedRoute role="cto"><AdminAssessmentManagementPage /></ProtectedRoute>} />
+        <Route path="/cto/reports" element={<ProtectedRoute role="cto"><AdminSchoolReportsPage /></ProtectedRoute>} />
+        <Route path="/cto/progress" element={<ProtectedRoute role="cto"><AdminProgressPage /></ProtectedRoute>} />
+        <Route path="/cto/analytics" element={<ProtectedRoute role="cto"><AdminAnalyticsPage /></ProtectedRoute>} />
+        <Route path="/cto/certificates" element={<ProtectedRoute role="cto"><AdminCertificatesPage /></ProtectedRoute>} />
+        <Route path="/cto/ai-tutor" element={<ProtectedRoute role="cto"><AdminAiTutorPage /></ProtectedRoute>} />
+        <Route path="/cto/competitions" element={<ProtectedRoute role="cto"><AdminCompetitionsPage /></ProtectedRoute>} />
+        <Route path="/cto/content" element={<ProtectedRoute role="cto"><UnifiedCurriculumPage shell="admin" /></ProtectedRoute>} />
         <Route path="/teacher/materials/:id" element={<ProtectedRoute role="teacher"><MaterialViewerPage /></ProtectedRoute>} />
         <Route path="/teacher" element={<ProtectedRoute role="teacher"><TeacherShell /></ProtectedRoute>}>
           <Route index element={<TeacherDashboard />} />

@@ -39,7 +39,7 @@ const requirePermission = (...permissions) => async (req, res, next) => {
     if (!req.authUser) return; // loadUser handled the response
   }
   const user = req.authUser;
-  if (user.role === "admin") return next();
+  if (["admin", "cto"].includes(user.role)) return next();
   if (hasPermission(user, permissions)) return next();
   return res.status(403).json({ message: "Permission denied" });
 };

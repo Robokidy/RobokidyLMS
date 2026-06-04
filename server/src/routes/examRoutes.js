@@ -139,7 +139,7 @@ router.get("/tests", auth, async (req, res) => {
 
     if (role === "teacher") {
       query.createdBy = userId;
-    } else if (role === "admin") {
+    } else if (["admin", "cto"].includes(role)) {
       query.schoolId = schoolId;
     } else if (role === "student") {
       // Students see assigned tests only
@@ -1031,7 +1031,7 @@ router.get("/tests/:testId/report", auth, async (req, res) => {
     if (role === "teacher" && test.createdBy.toString() !== userId) {
       return res.status(403).json({ error: "Unauthorized" });
     }
-    if (role === "admin" && test.schoolId.toString() !== schoolId) {
+    if (["admin", "cto"].includes(role) && test.schoolId.toString() !== schoolId) {
       return res.status(403).json({ error: "Unauthorized" });
     }
     if (role === "student") {
@@ -1186,3 +1186,5 @@ async function updateTestAnalytics(testId) {
 }
 
 module.exports = router;
+
+

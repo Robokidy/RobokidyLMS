@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, Button, Alert, Badge, Modal, Progress } from '@/components/ui';
 import { ChevronRight, ChevronLeft, Flag, Clock, AlertTriangle } from 'lucide-react';
+import { apiFetch } from '@/api/client';
 
 export default function ExamWindow({ testId, attemptId }) {
   const [questions, setQuestions] = useState([]);
@@ -17,20 +18,13 @@ export default function ExamWindow({ testId, attemptId }) {
   const timerRef = useRef(null);
   const activityRef = useRef(null);
   const violationCountRef = useRef(0);
+  const token = localStorage.getItem('token') || undefined;
 
   // Initialize exam
   useEffect(() => {
     const initExam = async () => {
       try {
-        const response = await fetch(`/api/tests/${testId}/start`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        const data = await response.json();
+        const data = await apiFetch(`/tests/${testId}/start`, { method: 'POST' }, token);
         setQuestions(data.questions);
         setTimeRemaining(data.testDuration * 60); // Convert to seconds
 
@@ -166,18 +160,14 @@ export default function ExamWindow({ testId, attemptId }) {
 
   const logViolation = async (type, description) => {
     try {
-      await fetch(`/api/tests/attempts/${attemptId}/violation`, {
+      await apiFetch(`/tests/attempts/${attemptId}/violation`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        body: {
           violationType: type,
           description,
           severity: violationCountRef.current >= 2 ? 'moderate' : 'warning',
-        }),
-      });
+        },
+      }, token);
 
       setViolations((prev) => [
         ...prev,
@@ -194,7 +184,7 @@ export default function ExamWindow({ testId, attemptId }) {
 
   const checkViolationThreshold = () => {
     if (violationCountRef.current === 1) {
-      setWarningMessage('⚠️ Warning: Suspicious activity detected. Continued violations may result in auto-submission.');
+      setWarningMessage('Warning: Suspicious activity detected. Continued violations may result in auto-submission.');
       setShowWarning(true);
       setTimeout(() => setShowWarning(false), 5000);
     } else if (violationCountRef.current >= 3) {
@@ -205,19 +195,15 @@ export default function ExamWindow({ testId, attemptId }) {
   const saveAnswer = async (questionIndex, answer) => {
     try {
       const question = questions[questionIndex];
-      await fetch(`/api/tests/attempts/${attemptId}/save-answer`, {
+      await apiFetch(`/tests/attempts/${attemptId}/save-answer`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        body: {
           questionId: question._id,
           answer,
           questionType: question.type,
           timeSpent: Math.floor(Date.now() / 1000),
-        }),
-      });
+        },
+      }, token);
     } catch (error) {
       console.error('Error saving answer:', error);
     }
@@ -231,16 +217,12 @@ export default function ExamWindow({ testId, attemptId }) {
     setShowWarning(true);
 
     try {
-      await fetch(`/api/tests/attempts/${attemptId}/submit`, {
+      await apiFetch(`/tests/attempts/${attemptId}/submit`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        body: {
           submissionMethod: 'auto-timeout',
-        }),
-      });
+        },
+      }, token);
 
       // Redirect to results
       window.location.href = `/student/tests/${testId}/results`;
@@ -261,16 +243,12 @@ export default function ExamWindow({ testId, attemptId }) {
     setSubmitted(true);
 
     try {
-      await fetch(`/api/tests/attempts/${attemptId}/submit`, {
+      await apiFetch(`/tests/attempts/${attemptId}/submit`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        body: {
           submissionMethod: 'manual',
-        }),
-      });
+        },
+      }, token);
 
       window.location.href = `/student/tests/${testId}/results`;
     } catch (error) {
