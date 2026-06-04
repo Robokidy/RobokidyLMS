@@ -15,6 +15,7 @@ export const teacherNavItems: TeacherNavItem[] = [
   { label: "Classes", href: "/teacher/classes", icon: GraduationCap, permissions: [], description: "Manage all your assigned classes and drill into class details." },
   { label: "Students", href: "/teacher/students", icon: Users, permissions: ["students:view", "students:manage"], description: "Search, filter and manage student records with independent state." },
   { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck, permissions: ["attendance"], description: "Track attendance, reports and class-wide attendance trends." },
+  { label: "Daily Work Log", href: "/teacher/work-log", icon: ClipboardList, permissions: [], description: "Submit end-of-day lesson coverage, materials, assessments, homework, and teaching hours." },
   { label: "Fees", href: "/teacher/fees", icon: CreditCard, permissions: [], description: "Manage fee status for assigned students." },
   { label: "Lessons", href: "/teacher/lessons", icon: BookText, permissions: [], description: "Create, edit, assign, preview, and publish shared lessons." },
   { label: "Materials", href: "/teacher/materials", icon: BookMarked, permissions: ["materials"], description: "Upload and manage course materials per subject and class." },

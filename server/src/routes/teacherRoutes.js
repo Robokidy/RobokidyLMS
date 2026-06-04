@@ -12,6 +12,7 @@ const TestAttempt = require("../models/TestAttempt");
 const Course = require("../models/Course");
 const CourseTrack = require("../models/CourseTrack");
 const Attendance = require("../models/Attendance");
+const TeacherWorkLog = require("../models/TeacherWorkLog");
 const Assignment = require("../models/Assignment");
 const FeeAccount = require("../models/FeeAccount");
 const StudentProgress = require("../models/StudentProgress");
@@ -85,6 +86,7 @@ function toArray(value) {
 function scopedQuery(req, base = {}) {
   const scope = teacherScope(req);
   const filter = { ...base, schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: scope.classSectionIds } };
+  if (base.role === "student" && req.query.includeArchived !== "true" && req.query.status !== "archived") filter.active = { $ne: false };
   if (req.query.classSectionId && scope.classSectionIds.includes(String(req.query.classSectionId))) filter.classSectionIds = req.query.classSectionId;
   if (req.query.grade) filter.grade = req.query.grade;
   if (req.query.status) filter.active = req.query.status === "active";
@@ -102,7 +104,7 @@ async function canAccessClass(req, classSectionId) {
 
 async function canAccessStudent(req, studentId) {
   const scope = teacherScope(req);
-  const student = await User.findOne({ _id: studentId, role: "student", schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: scope.classSectionIds } });
+  const student = await User.findOne({ _id: studentId, role: "student", active: { $ne: false }, schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: scope.classSectionIds } });
   return student;
 }
 
@@ -185,7 +187,7 @@ router.get("/classes", async (req, res) => {
     .populate("courseTrackIds", "trackName trackCode category grade")
     .lean();
   const studentCounts = await User.aggregate([
-    { $match: { role: "student", schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: classes.map((klass) => klass._id) } } },
+    { $match: { role: "student", active: { $ne: false }, schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: classes.map((klass) => klass._id) } } },
     { $unwind: "$classSectionIds" },
     { $match: { classSectionIds: { $in: classes.map((klass) => klass._id) } } },
     { $group: { _id: "$classSectionIds", count: { $sum: 1 } } }
@@ -199,7 +201,7 @@ router.get("/schools", async (req, res) => {
   const [schools, classes, students, attendanceAgg, feeAgg] = await Promise.all([
     School.find({ _id: { $in: scope.schoolIds } }).select("name code principalName active").lean(),
     ClassSection.find({ _id: { $in: scope.classSectionIds }, schoolId: { $in: scope.schoolIds } }).select("name grade section schoolId teacherIds").lean(),
-    User.find({ role: "student", schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: scope.classSectionIds } }).select("schoolId classSectionIds active").lean(),
+    User.find({ role: "student", active: { $ne: false }, schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: scope.classSectionIds } }).select("schoolId classSectionIds active").lean(),
     Attendance.aggregate([{ $match: { schoolId: { $in: scope.schoolIds }, classSectionId: { $in: scope.classSectionIds } } }, { $group: { _id: { schoolId: "$schoolId", status: "$status" }, count: { $sum: 1 } } }]),
     FeeAccount.aggregate([{ $match: { schoolId: { $in: scope.schoolIds }, classSectionId: { $in: scope.classSectionIds } } }, { $group: { _id: "$schoolId", total: { $sum: "$totalFees" }, paid: { $sum: "$paidAmount" } } }])
   ]);
@@ -400,6 +402,7 @@ router.get("/classes/:classId/students", async (req, res) => {
 
   const students = await User.find({ 
     role: "student",
+    active: { $ne: false },
     classSectionIds: req.params.classId,
     schoolId: { $in: scope.schoolIds }
   })
@@ -499,10 +502,17 @@ router.put("/students/:id", async (req, res) => {
 
 router.delete("/students/:id", async (req, res) => {
   const scope = teacherScope(req);
-  const student = await User.findOneAndUpdate({ _id: req.params.id, role: "student", schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: scope.classSectionIds } }, { active: false }, { new: true });
+  const student = await User.findOneAndDelete({ _id: req.params.id, role: "student", schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: scope.classSectionIds } });
   if (!student) return res.status(404).json({ message: "Student not found in your assigned classes" });
-  await ActivityLog.create({ userId: req.user.id, action: "teacher_student_deactivated", meta: { studentId: student._id } });
-  res.json({ message: "Student deactivated" });
+  await Promise.all([
+    StudentProgress.deleteOne({ userId: student._id }),
+    FeeAccount.deleteMany({ studentId: student._id }),
+    Attendance.deleteMany({ studentId: student._id }),
+    TestAttempt.deleteMany({ studentId: student._id }),
+    Assignment.updateMany({ "submissions.studentId": student._id }, { $pull: { submissions: { studentId: student._id } } }),
+    ActivityLog.create({ userId: req.user.id, action: "teacher_student_removed", meta: { studentId: student._id } })
+  ]);
+  res.json({ message: "Student removed" });
 });
 
 router.post("/attendance", async (req, res) => {
@@ -542,6 +552,58 @@ router.get("/attendance", async (req, res) => {
   if (req.query.dateFrom) filter.date.$gte = new Date(req.query.dateFrom);
   if (req.query.dateTo) filter.date.$lte = new Date(req.query.dateTo);
   res.json(await Attendance.find(filter).populate("studentId", "username fullName").populate("classSectionId", "name grade section").sort({ date: -1 }).limit(500).lean());
+});
+
+router.get("/work-logs", async (req, res) => {
+  const scope = teacherScope(req);
+  const filter = { teacherId: req.user.id, schoolId: { $in: scope.schoolIds }, classSectionId: { $in: scope.classSectionIds } };
+  if (req.query.classSectionId && scope.classSectionIds.includes(String(req.query.classSectionId))) filter.classSectionId = req.query.classSectionId;
+  if (req.query.dateFrom || req.query.dateTo) filter.date = {};
+  if (req.query.dateFrom) filter.date.$gte = new Date(req.query.dateFrom);
+  if (req.query.dateTo) filter.date.$lte = new Date(req.query.dateTo);
+  res.json(await TeacherWorkLog.find(filter).populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("courseId", "name slug").populate("lessonId", "title duration").populate("materialIds", "title type").populate("assessmentId", "title testType").sort({ date: -1, createdAt: -1 }).limit(500).lean());
+});
+
+router.get("/work-logs/status", async (req, res) => {
+  const today = new Date();
+  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 1));
+  const submittedCount = await TeacherWorkLog.countDocuments({ teacherId: req.user.id, date: { $gte: start, $lt: end } });
+  res.json({
+    submittedToday: submittedCount > 0,
+    entriesToday: submittedCount,
+    reminderDue: new Date().getHours() >= 18,
+    mustSubmit: submittedCount === 0
+  });
+});
+
+router.post("/work-logs", async (req, res) => {
+  const scope = teacherScope(req);
+  if (!scope.schoolIds.includes(String(req.body.schoolId))) return res.status(403).json({ message: "School is not assigned to you" });
+  if (!scope.classSectionIds.includes(String(req.body.classSectionId))) return res.status(403).json({ message: "Class is not assigned to you" });
+  const lesson = req.body.lessonId ? await Lesson.findById(req.body.lessonId).select("title courseId duration").lean() : null;
+  const workLog = await TeacherWorkLog.create({
+    teacherId: req.user.id,
+    schoolId: req.body.schoolId,
+    classSectionId: req.body.classSectionId,
+    courseId: req.body.courseId || lesson?.courseId || undefined,
+    lessonId: req.body.lessonId || undefined,
+    materialIds: toArray(req.body.materialIds),
+    assessmentId: req.body.assessmentId || undefined,
+    date: new Date(req.body.date || Date.now()),
+    grade: safeText(req.body.grade),
+    subject: safeText(req.body.subject),
+    lessonConducted: safeText(req.body.lessonConducted || lesson?.title),
+    topicCovered: safeText(req.body.topicCovered),
+    materialsUsed: safeText(req.body.materialsUsed),
+    assessmentConducted: Boolean(req.body.assessmentConducted),
+    assessmentSummary: safeText(req.body.assessmentSummary),
+    homeworkGiven: safeText(req.body.homeworkGiven),
+    durationMinutes: Number(req.body.durationMinutes || lesson?.duration || 45),
+    remarks: safeText(req.body.remarks)
+  });
+  await ActivityLog.create({ userId: req.user.id, action: "teacher_work_log_submitted", meta: { workLogId: workLog._id, classSectionId: workLog.classSectionId } });
+  res.status(201).json(workLog);
 });
 
 router.get("/assignments", async (req, res) => {
@@ -587,8 +649,8 @@ router.get("/fees", async (req, res) => {
   if (req.query.classSectionId && scope.classSectionIds.includes(String(req.query.classSectionId))) filter.classSectionId = req.query.classSectionId;
   if (req.query.schoolId && scope.schoolIds.includes(String(req.query.schoolId))) filter.schoolId = req.query.schoolId;
   if (req.query.status) filter.status = req.query.status;
-  const rows = await FeeAccount.find(filter).populate("schoolId", "name code").populate("studentId", "username fullName rollNumber").populate("classSectionId", "name grade section").sort({ dueDate: 1 }).lean();
-  res.json(rows.map(serializeFeeAccount));
+  const rows = await FeeAccount.find(filter).populate("schoolId", "name code").populate("studentId", "username fullName rollNumber active").populate("classSectionId", "name grade section").sort({ dueDate: 1 }).lean();
+  res.json(rows.filter((row) => row.studentId?.active !== false).map(serializeFeeAccount));
 });
 
 router.post("/fees", async (req, res) => {
@@ -732,6 +794,21 @@ router.get("/courses", async (req, res) => {
     console.error("Error fetching teacher courses:", error);
     res.status(500).json({ message: "Failed to fetch courses" });
   }
+});
+
+router.get("/tests", async (req, res) => {
+  const scope = teacherScope(req);
+  const classObjectIds = scope.classSectionIds.filter((id) => isValidObjectId(id));
+  const filter = {
+    status: { $ne: "archived" },
+    $or: [
+      { createdBy: req.user.id },
+      { assignedClasses: { $in: classObjectIds } },
+      { classSectionIds: { $in: classObjectIds } },
+      { schoolId: { $in: scope.schoolIds } }
+    ]
+  };
+  res.json(await Test.find(filter).select("title subject testType status totalMarks createdAt").sort({ createdAt: -1 }).limit(300).lean());
 });
 
 router.get("/notifications", async (req, res) => {

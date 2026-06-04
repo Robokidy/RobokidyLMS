@@ -37,6 +37,7 @@ import TeacherQuizAssessmentPage from "@/pages/teacher/TeacherQuizAssessmentPage
 import TeacherCertificatesPage from "@/pages/teacher/TeacherCertificatesPage";
 import TeacherReportsPage from "@/pages/teacher/TeacherReportsPage";
 import TeacherProfilePage from "@/pages/teacher/TeacherProfilePage";
+import DailyWorkLogPage from "@/pages/teacher/DailyWorkLogPage";
 import UnifiedMaterialsPage from "@/modules/materials/UnifiedMaterialsPage";
 import UnifiedCurriculumPage from "@/modules/curriculum/UnifiedCurriculumPage";
 import CodingPage from "@/pages/teacher/CodingPage";
@@ -95,6 +96,7 @@ const App = () => (
           <Route path="classes/:id" element={<ClassDetailsPage />} />
           <Route path="students" element={<AdminSchoolsPage mode="teacher" />} />
           <Route path="attendance" element={<AdminSchoolsPage mode="teacher" />} />
+          <Route path="work-log" element={<DailyWorkLogPage />} />
           <Route path="fees" element={<AdminSchoolsPage mode="teacher" />} />
           <Route path="assignments" element={<AssignmentsPage />} />
           <Route path="quizzes" element={<TeacherQuizAssessmentPage />} />

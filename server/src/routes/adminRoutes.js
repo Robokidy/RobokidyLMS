@@ -14,8 +14,12 @@ const School = require("../models/School");
 const ClassSection = require("../models/ClassSection");
 const FeeAccount = require("../models/FeeAccount");
 const Attendance = require("../models/Attendance");
+const TeacherAttendance = require("../models/TeacherAttendance");
+const TeacherHoliday = require("../models/TeacherHoliday");
+const TeacherWorkLog = require("../models/TeacherWorkLog");
 const Assignment = require("../models/Assignment");
 const Announcement = require("../models/Announcement");
+const TestAttempt = require("../models/TestAttempt");
 const { DEFAULT_FIRST_PASSWORD, generateTempPassword } = require("../utils/password");
 const { createBulkStudents, ensureUsernameAvailable, generateUniqueUsername } = require("../utils/accounts");
 const { ensureBaseCourses, toSlug } = require("../utils/courses");
@@ -92,6 +96,76 @@ function performanceBand(score) {
   return "Needs Improvement";
 }
 
+function workforceGrade(score) {
+  if (score >= 95) return "A+";
+  if (score >= 85) return "A";
+  if (score >= 75) return "B+";
+  if (score >= 65) return "B";
+  if (score >= 50) return "C";
+  return "Needs Support";
+}
+
+function monthRange(query = {}) {
+  const anchor = query.month ? new Date(`${query.month}-01T00:00:00.000Z`) : new Date();
+  const start = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 1));
+  return { start, end };
+}
+
+function summarizeTeacherWorkforce(attendanceRows = [], workLogs = []) {
+  const counted = attendanceRows.filter((row) => row.status !== "holiday");
+  const present = attendanceRows.filter((row) => ["present", "work-from-home"].includes(row.status)).length;
+  const halfDays = attendanceRows.filter((row) => row.status === "half-day").length;
+  const absent = attendanceRows.filter((row) => row.status === "absent").length;
+  const leaves = attendanceRows.filter((row) => row.status === "leave").length;
+  const holidays = attendanceRows.filter((row) => row.status === "holiday").length;
+  const attendancePercentage = counted.length ? Math.round(((present + halfDays * 0.5) / counted.length) * 100) : 0;
+  const teachingHours = Math.round((workLogs.reduce((sum, row) => sum + Number(row.durationMinutes || 0), 0) / 60) * 10) / 10;
+  const attendanceScore = attendancePercentage;
+  const teachingActivityScore = workLogs.length ? Math.min(100, workLogs.length * 5) : 0;
+  const assessmentScore = workLogs.length ? Math.round((workLogs.filter((row) => row.assessmentConducted).length / workLogs.length) * 100) : 0;
+  const homeworkScore = workLogs.length ? Math.round((workLogs.filter((row) => row.homeworkGiven).length / workLogs.length) * 100) : 0;
+  const studentPerformanceScore = 85;
+  const finalRating = Math.round((attendanceScore * 0.3) + (teachingActivityScore * 0.25) + (assessmentScore * 0.15) + (homeworkScore * 0.1) + (studentPerformanceScore * 0.2));
+  return {
+    presentDays: present,
+    absentDays: absent,
+    leaveDays: leaves,
+    halfDays,
+    holidayCount: holidays,
+    attendancePercentage,
+    workingHoursThisMonth: attendanceRows.reduce((sum, row) => sum + Number(row.totalHours || 0), 0),
+    lessonsCompleted: new Set(workLogs.map((row) => String(row.lessonId || row.lessonConducted || row._id))).size,
+    classesConducted: workLogs.length,
+    teachingHours,
+    materialsShared: workLogs.reduce((sum, row) => sum + ((row.materialIds || []).length || (row.materialsUsed ? 1 : 0)), 0),
+    quizzesConducted: workLogs.filter((row) => row.assessmentConducted).length,
+    assessmentsConducted: workLogs.filter((row) => row.assessmentConducted).length,
+    certificatesIssued: 0,
+    attendanceScore,
+    teachingActivityScore,
+    assessmentCompletionScore: assessmentScore,
+    homeworkCompletionScore: homeworkScore,
+    studentPerformanceScore,
+    finalRating,
+    grade: workforceGrade(finalRating)
+  };
+}
+
+async function teacherWorkforceMap(teacherIds, query = {}) {
+  const { start, end } = monthRange(query);
+  const [attendanceRows, workLogs] = await Promise.all([
+    TeacherAttendance.find({ teacherId: { $in: teacherIds }, date: { $gte: start, $lt: end } }).lean(),
+    TeacherWorkLog.find({ teacherId: { $in: teacherIds }, date: { $gte: start, $lt: end } }).lean()
+  ]);
+  const map = new Map();
+  teacherIds.forEach((id) => {
+    const key = String(id);
+    map.set(key, summarizeTeacherWorkforce(attendanceRows.filter((row) => String(row.teacherId) === key), workLogs.filter((row) => String(row.teacherId) === key)));
+  });
+  return map;
+}
+
 function escapeRegex(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -102,6 +176,7 @@ function commonFilters(query, extra = {}) {
   if (query.classSectionId) filter.classSectionIds = query.classSectionId;
   if (query.grade) filter.grade = query.grade;
   if (query.studentStatus) filter.active = query.studentStatus === "active";
+  if (extra.role === "student" && query.includeArchived !== "true" && query.studentStatus !== "archived") filter.active = { $ne: false };
   if (query.search) {
     const pattern = new RegExp(escapeRegex(query.search), "i");
     filter.$or = [{ username: pattern }, { fullName: pattern }, { email: pattern }, { studentId: pattern }, { rollNumber: pattern }];
@@ -219,7 +294,7 @@ router.get("/schools", async (req, res) => {
   const [classes, teachers, students] = await Promise.all([
     ClassSection.aggregate([{ $group: { _id: "$schoolId", count: { $sum: 1 } } }]),
     User.aggregate([{ $match: { role: "teacher" } }, { $group: { _id: "$schoolId", count: { $sum: 1 } } }]),
-    User.aggregate([{ $match: { role: "student" } }, { $group: { _id: "$schoolId", count: { $sum: 1 } } }])
+    User.aggregate([{ $match: { role: "student", active: { $ne: false } } }, { $group: { _id: "$schoolId", count: { $sum: 1 } } }])
   ]);
   const toMap = (rows) => new Map(rows.map((row) => [String(row._id), row.count]));
   const classMap = toMap(classes);
@@ -410,7 +485,9 @@ router.get("/teachers", async (req, res) => {
   delete filter.classSectionIds;
   if (req.query.teacherId) filter._id = req.query.teacherId;
   if (req.query.subject) filter.subjects = req.query.subject;
-  res.json(await User.find(filter).select("username fullName email phone employeeId subjects qualification experience profilePhotoUrl joiningDate salary permissions schoolId classSectionIds active createdAt").populate("schoolId", "name code").populate("classSectionIds", "name grade section").sort({ createdAt: -1 }).lean());
+  const teachers = await User.find(filter).select("username fullName email phone employeeId subjects qualification experience profilePhotoUrl joiningDate salary permissions schoolId schoolIds classSectionIds active createdAt").populate("schoolId", "name code").populate("schoolIds", "name code").populate("classSectionIds", "name grade section").sort({ createdAt: -1 }).lean();
+  const workforce = await teacherWorkforceMap(teachers.map((teacher) => teacher._id), req.query);
+  res.json(teachers.map((teacher) => ({ ...teacher, workforce: workforce.get(String(teacher._id)) || summarizeTeacherWorkforce([], []) })));
 });
 
 router.post("/teachers", async (req, res) => {
@@ -519,8 +596,8 @@ router.get("/fees", async (req, res) => {
   if (req.query.studentId) filter.studentId = req.query.studentId;
   if (req.query.status || req.query.feeStatus) filter.status = req.query.status || req.query.feeStatus;
   Object.assign(filter, dateFilter(req.query, "dueDate"));
-  const rows = await FeeAccount.find(filter).populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("studentId", "username fullName rollNumber").sort({ dueDate: 1 }).lean();
-  res.json(rows.map(serializeFeeAccount));
+  const rows = await FeeAccount.find(filter).populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("studentId", "username fullName rollNumber active").sort({ dueDate: 1 }).lean();
+  res.json(rows.filter((row) => row.studentId?.active !== false).map(serializeFeeAccount));
 });
 
 router.post("/fees", async (req, res) => {
@@ -646,6 +723,132 @@ router.get("/attendance/reports", async (req, res) => {
   if (req.query.classSectionId) match.classSectionId = req.query.classSectionId;
   const rows = await Attendance.aggregate([{ $match: match }, { $group: { _id: { classSectionId: "$classSectionId", status: "$status" }, count: { $sum: 1 } } }]);
   res.json(rows);
+});
+
+router.get("/teacher-workforce", async (req, res) => {
+  const teacherFilter = { role: "teacher" };
+  if (req.query.teacherId) teacherFilter._id = req.query.teacherId;
+  if (req.query.schoolId) teacherFilter.$or = [{ schoolId: req.query.schoolId }, { schoolIds: req.query.schoolId }];
+  const teachers = await User.find(teacherFilter).select("fullName username schoolId schoolIds classSectionIds").lean();
+  const teacherIds = teachers.map((teacher) => teacher._id);
+  const { start, end } = monthRange(req.query);
+  const [attendance, holidays, workLogs] = await Promise.all([
+    TeacherAttendance.find({ teacherId: { $in: teacherIds }, date: { $gte: start, $lt: end } }).populate("teacherId", "fullName username").populate("schoolId", "name code").populate("approvedBy", "fullName username").sort({ date: -1 }).lean(),
+    TeacherHoliday.find({ active: true, date: { $gte: start, $lt: end } }).populate("schoolIds", "name code").populate("teacherIds", "fullName username").populate("classSectionIds", "name grade section").sort({ date: 1 }).lean(),
+    TeacherWorkLog.find({ teacherId: { $in: teacherIds }, date: { $gte: start, $lt: end } }).populate("teacherId", "fullName username").populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("courseId", "name slug").populate("lessonId", "title duration").populate("materialIds", "title type").populate("assessmentId", "title testType").sort({ date: -1, createdAt: -1 }).lean()
+  ]);
+  const summaryByTeacher = new Map();
+  teachers.forEach((teacher) => {
+    summaryByTeacher.set(String(teacher._id), {
+      teacherId: teacher._id,
+      teacherName: teacher.fullName || teacher.username,
+      ...summarizeTeacherWorkforce(
+        attendance.filter((row) => String(row.teacherId?._id || row.teacherId) === String(teacher._id)),
+        workLogs.filter((row) => String(row.teacherId?._id || row.teacherId) === String(teacher._id))
+      )
+    });
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  res.json({
+    summaries: [...summaryByTeacher.values()],
+    attendance,
+    holidays,
+    workLogs,
+    missingDailyLogs: teachers.filter((teacher) => !workLogs.some((row) => String(row.teacherId?._id || row.teacherId) === String(teacher._id) && new Date(row.date).toISOString().slice(0, 10) === today)),
+    absentToday: attendance.filter((row) => row.status === "absent" && new Date(row.date).toISOString().slice(0, 10) === today),
+    pendingReports: workLogs.filter((row) => row.status === "pending")
+  });
+});
+
+router.post("/teacher-attendance", async (req, res) => {
+  const teacher = await User.findOne({ _id: req.body.teacherId, role: "teacher" }).select("schoolId").lean();
+  if (!teacher) return res.status(400).json({ message: "Valid teacher is required" });
+  const date = new Date(req.body.date || Date.now());
+  const row = await TeacherAttendance.findOneAndUpdate(
+    { teacherId: teacher._id, date },
+    {
+      teacherId: teacher._id,
+      schoolId: req.body.schoolId || teacher.schoolId,
+      date,
+      status: ["present", "absent", "half-day", "leave", "holiday", "work-from-home"].includes(req.body.status) ? req.body.status : "present",
+      checkInTime: safeText(req.body.checkInTime),
+      checkOutTime: safeText(req.body.checkOutTime),
+      totalHours: Number(req.body.totalHours || 0),
+      remarks: safeText(req.body.remarks),
+      approvedBy: req.user.id,
+      source: "manual"
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  await ActivityLog.create({ userId: req.user.id, action: "teacher_attendance_marked", meta: { teacherId: teacher._id, status: row.status } });
+  res.status(201).json(row);
+});
+
+router.post("/teacher-holidays", async (req, res) => {
+  const holiday = await TeacherHoliday.create({
+    name: safeText(req.body.name),
+    type: ["national", "school", "festival", "special", "emergency"].includes(req.body.type) ? req.body.type : "school",
+    date: new Date(req.body.date || Date.now()),
+    description: safeText(req.body.description),
+    schoolIds: toArray(req.body.schoolIds),
+    teacherIds: toArray(req.body.teacherIds),
+    classSectionIds: toArray(req.body.classSectionIds),
+    createdBy: req.user.id,
+    active: req.body.active !== false
+  });
+  const teacherFilter = { role: "teacher", active: { $ne: false } };
+  if (holiday.teacherIds.length) teacherFilter._id = { $in: holiday.teacherIds };
+  else if (holiday.schoolIds.length) teacherFilter.$or = [{ schoolId: { $in: holiday.schoolIds } }, { schoolIds: { $in: holiday.schoolIds } }];
+  else if (holiday.classSectionIds.length) teacherFilter.classSectionIds = { $in: holiday.classSectionIds };
+  const teachers = await User.find(teacherFilter).select("_id schoolId").lean();
+  const writes = teachers.map((teacher) => ({
+    updateOne: {
+      filter: { teacherId: teacher._id, date: holiday.date },
+      update: { $set: { teacherId: teacher._id, schoolId: teacher.schoolId, date: holiday.date, status: "holiday", remarks: holiday.name, approvedBy: req.user.id, source: "holiday" } },
+      upsert: true
+    }
+  }));
+  if (writes.length) await TeacherAttendance.bulkWrite(writes);
+  await ActivityLog.create({ userId: req.user.id, action: "teacher_holiday_created", meta: { holidayId: holiday._id, teachers: writes.length } });
+  res.status(201).json({ holiday, exemptedTeachers: writes.length });
+});
+
+router.put("/teacher-holidays/:id", async (req, res) => {
+  const holiday = await TeacherHoliday.findById(req.params.id);
+  if (!holiday) return res.status(404).json({ message: "Holiday not found" });
+  holiday.name = safeText(req.body.name || holiday.name);
+  holiday.type = ["national", "school", "festival", "special", "emergency"].includes(req.body.type) ? req.body.type : holiday.type;
+  holiday.date = req.body.date ? new Date(req.body.date) : holiday.date;
+  holiday.description = safeText(req.body.description);
+  if (req.body.schoolIds !== undefined) holiday.schoolIds = toArray(req.body.schoolIds);
+  if (req.body.teacherIds !== undefined) holiday.teacherIds = toArray(req.body.teacherIds);
+  if (req.body.classSectionIds !== undefined) holiday.classSectionIds = toArray(req.body.classSectionIds);
+  holiday.active = req.body.active !== false;
+  await holiday.save();
+  await ActivityLog.create({ userId: req.user.id, action: "teacher_holiday_updated", meta: { holidayId: holiday._id } });
+  res.json(holiday);
+});
+
+router.delete("/teacher-holidays/:id", async (req, res) => {
+  const holiday = await TeacherHoliday.findByIdAndUpdate(req.params.id, { active: false }, { new: true });
+  if (!holiday) return res.status(404).json({ message: "Holiday not found" });
+  await TeacherAttendance.deleteMany({ source: "holiday", date: holiday.date, remarks: holiday.name });
+  await ActivityLog.create({ userId: req.user.id, action: "teacher_holiday_archived", meta: { holidayId: holiday._id } });
+  res.json({ message: "Holiday archived" });
+});
+
+router.get("/teacher-workforce/reports", async (req, res) => {
+  const teacherId = req.query.teacherId;
+  const { start, end } = monthRange(req.query);
+  const teacherFilter = { role: "teacher" };
+  if (teacherId) teacherFilter._id = teacherId;
+  const teachers = await User.find(teacherFilter).select("fullName username").lean();
+  const teacherIds = teachers.map((teacher) => teacher._id);
+  const [attendance, workLogs] = await Promise.all([
+    TeacherAttendance.find({ teacherId: { $in: teacherIds }, date: { $gte: start, $lt: end } }).populate("teacherId", "fullName username").lean(),
+    TeacherWorkLog.find({ teacherId: { $in: teacherIds }, date: { $gte: start, $lt: end } }).populate("teacherId", "fullName username").populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("lessonId", "title").lean()
+  ]);
+  res.json({ attendance, workLogs, summaries: teachers.map((teacher) => ({ teacherId: teacher._id, teacherName: teacher.fullName || teacher.username, ...summarizeTeacherWorkforce(attendance.filter((row) => String(row.teacherId?._id || row.teacherId) === String(teacher._id)), workLogs.filter((row) => String(row.teacherId?._id || row.teacherId) === String(teacher._id))) })) });
 });
 
 router.get("/audit-logs", async (_req, res) => {
@@ -939,6 +1142,10 @@ router.delete("/students/:id", async (req, res) => {
 
   await Promise.all([
     StudentProgress.deleteOne({ userId: student._id }),
+    FeeAccount.deleteMany({ studentId: student._id }),
+    Attendance.deleteMany({ studentId: student._id }),
+    TestAttempt.deleteMany({ studentId: student._id }),
+    Assignment.updateMany({ "submissions.studentId": student._id }, { $pull: { submissions: { studentId: student._id } } }),
     ActivityLog.deleteMany({ userId: student._id }),
     ActivityLog.create({
       userId: req.user.id,
