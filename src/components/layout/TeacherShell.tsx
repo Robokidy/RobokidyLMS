@@ -48,9 +48,12 @@ export default function TeacherShell() {
       <div className="flex min-h-screen">
         <aside className="hidden lg:flex lg:w-72 lg:flex-col border-r bg-white/80 dark:bg-slate-950/60 backdrop-blur">
           <div className="h-20 px-6 flex items-center border-b bg-slate-950 text-white">
-            <div>
-              <p className="text-xl font-bold">Robokidy LMS</p>
+            <div className="flex items-center gap-3">
+              <img src="/logo.png" alt="RoboKidy logo" className="h-11 w-auto rounded bg-white p-1" />
+              <div>
+              <p className="text-xl font-bold">RoboKidy LMS</p>
               <p className="text-xs text-slate-300">Teacher operations console</p>
+              </div>
             </div>
           </div>
           <TeacherNav />
@@ -67,7 +70,8 @@ export default function TeacherShell() {
                 </SheetTrigger>
                 <SheetContent side="left" className="p-0">
                   <div className="h-20 px-6 flex items-center border-b bg-slate-950 text-white">
-                    <p className="text-lg font-bold">Robokidy LMS</p>
+                    <img src="/logo.png" alt="RoboKidy logo" className="mr-3 h-10 w-auto rounded bg-white p-1" />
+                    <p className="text-lg font-bold">RoboKidy LMS</p>
                   </div>
                   <TeacherNav />
                 </SheetContent>

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/api/client";
 
-type UserRole = "admin" | "cto" | "teacher" | "student" | "parent";
+type UserRole = "admin" | "cto" | "cmo" | "teacher" | "student" | "parent";
 
 type User = {
   id: string;

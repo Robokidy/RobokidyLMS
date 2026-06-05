@@ -595,7 +595,7 @@ function SettingsView() {
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, username, email, student ID, employee ID" />
             <NativeSelect value={role} onChange={(event) => setRole(event.target.value)}>
               <option value="">All roles</option>
-              {["cto", "teacher", "student", "parent"].map((item) => <option key={item} value={item}>{item}</option>)}
+              {["cto", "cmo", "teacher", "student", "parent"].map((item) => <option key={item} value={item}>{item}</option>)}
             </NativeSelect>
             <Button onClick={loadAccounts}><Search className="mr-2 h-4 w-4" />Search</Button>
           </div>

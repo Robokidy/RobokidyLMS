@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, ArrowUpRight, Building2, CalendarCheck, CreditCard, FileText, GraduationCap, Plus, ShieldCheck, Users } from "lucide-react";
+import { Activity, ArrowUpRight, Building2, CalendarCheck, CreditCard, FileText, GraduationCap, Handshake, Plus, ShieldCheck, Target, Users } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiFetch } from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
@@ -30,6 +30,7 @@ export default function CeoDashboard() {
   const { token, user } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any[]>([]);
+  const [marketing, setMarketing] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -37,11 +38,13 @@ export default function CeoDashboard() {
     setLoading(true);
     Promise.all([
       apiFetch("/admin/dashboard", {}, token),
-      apiFetch("/admin/analytics", {}, token)
+      apiFetch("/admin/analytics", {}, token),
+      apiFetch("/marketing/dashboard", {}, token).catch(() => null)
     ])
-      .then(([dashboard, analyticsData]) => {
+      .then(([dashboard, analyticsData, marketingData]) => {
         setStats(dashboard);
         setAnalytics(analyticsData.analytics || []);
+        setMarketing(marketingData);
         setError("");
       })
       .catch((err) => setError(err.message || "Unable to load dashboard"))
@@ -58,6 +61,7 @@ export default function CeoDashboard() {
     [performance]
   );
   const visibleKpis = user?.role === "cto" ? kpis.filter((card) => card.key !== "pendingFees") : kpis;
+  const marketingSummary = marketing?.summary || {};
 
   return (
     <AdminShell title={user?.role === "cto" ? "CTO Dashboard" : "CEO Dashboard"} subtitle={user?.role === "cto" ? "Operational command center for teachers, curriculum, academic delivery, and reports" : "Executive health across schools, revenue, attendance, assessments, and learning operations"}>
@@ -132,6 +136,51 @@ export default function CeoDashboard() {
             ))}
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1fr]">
+        <Card className="rounded-lg">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Marketing Overview</CardTitle>
+            <Target className="h-4 w-4 text-slate-500" />
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            {[
+              ["Leads", marketingSummary.totalLeads || 0],
+              ["Interested Schools", marketingSummary.schoolsInterested || 0],
+              ["Conversions", marketingSummary.schoolsConverted || 0],
+              ["Revenue Potential", `Rs. ${Number(marketingSummary.revenuePotential || 0).toLocaleString()}`],
+              ["Meetings", marketingSummary.meetingsCompleted || 0],
+              ["Pending Follow-Ups", marketingSummary.followUpsPending || 0]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md border bg-white p-3 dark:bg-slate-900">
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="mt-1 text-xl font-bold">{value}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        {user?.role === "cto" && (
+          <Card className="rounded-lg">
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle>School Onboarding</CardTitle>
+              <Handshake className="h-4 w-4 text-slate-500" />
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(marketing?.ctoOnboarding || []).slice(0, 5).map((row: any) => (
+                <div key={row.leadId} className="flex items-center justify-between rounded-md border bg-white p-3 dark:bg-slate-900">
+                  <div>
+                    <p className="text-sm font-medium">{row.institutionName}</p>
+                    <p className="text-xs text-slate-500">Pending setup: {row.pendingAcademicSetup}</p>
+                  </div>
+                  <Badge variant="outline">{row.onboardingStatus}</Badge>
+                </div>
+              ))}
+              {!marketing?.ctoOnboarding?.length && <p className="py-8 text-center text-sm text-slate-500">No converted schools yet.</p>}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">

@@ -74,11 +74,9 @@ export default function StudentLmsShell({ title = "Student Workspace", subtitle 
       <header className="sticky top-0 z-40 border-b border-white/30 bg-white/80 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-950/80">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-cyan-500 to-indigo-600 text-white shadow-lg shadow-cyan-500/20">
-              <ShieldCheck className="h-6 w-6" />
-            </div>
+            <img src="/logo.png" alt="RoboKidy logo" className="h-12 w-auto rounded-xl bg-white p-1 shadow-lg shadow-cyan-500/10" />
             <div>
-              <p className="text-lg font-bold">Robokidy Learn</p>
+              <p className="text-lg font-bold">RoboKidy Learn</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">Premium student workspace</p>
             </div>
           </div>

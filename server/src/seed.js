@@ -12,6 +12,12 @@ const CTO_DEFAULT = {
   password: "CtoRobokidy"
 };
 
+const CMO_DEFAULT = {
+  username: "cmo",
+  email: "cmo@robokidy.com",
+  password: "CmoRobokidy"
+};
+
 const topics = [
   "Python Introduction",
   "Python History",
@@ -123,6 +129,29 @@ const mkQuestions = (topic) => questionBank[topic] || [];
     cto.fullName = cto.fullName || "Chief Technology Officer";
     await cto.save();
     console.log("CTO updated");
+  }
+
+  let cmo = await User.findOne({ role: "cmo" });
+  if (!cmo) {
+    cmo = await User.create({
+      username: CMO_DEFAULT.username,
+      email: CMO_DEFAULT.email,
+      password: CMO_DEFAULT.password,
+      role: "cmo",
+      active: true,
+      firstLogin: true,
+      fullName: "Chief Marketing Officer"
+    });
+    console.log("CMO created");
+  } else {
+    cmo.username = CMO_DEFAULT.username;
+    cmo.email = CMO_DEFAULT.email;
+    cmo.password = CMO_DEFAULT.password;
+    cmo.active = true;
+    cmo.firstLogin = true;
+    cmo.fullName = cmo.fullName || "Chief Marketing Officer";
+    await cmo.save();
+    console.log("CMO updated");
   }
 
   const courses = await ensureBaseCourses();

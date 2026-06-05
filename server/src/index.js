@@ -40,6 +40,7 @@ const contentRoutes = require("./routes/contentRoutes");
 const assessmentRoutes = require("./routes/assessmentRoutes");
 const materialRoutes = require("./routes/materialRoutes");
 const academicReportRoutes = require("./routes/academicReportRoutes");
+const marketingRoutes = require("./routes/marketingRoutes");
 
 function optionalRoute(path) {
   try {
@@ -103,6 +104,7 @@ app.use("/api/materials", materialRoutes);
 app.use("/api/content", contentRoutes);
 app.use("/api/assessments", assessmentRoutes);
 app.use("/api/reports", academicReportRoutes);
+app.use("/api/marketing", marketingRoutes);
 if (feeRoutes) app.use("/api/fees", feeRoutes);
 if (examRoutes) app.use("/api/exams", examRoutes);
 if (testRoutes) app.use("/api/tests", testRoutes);
@@ -139,9 +141,25 @@ async function ensureDefaultCtoAccount() {
   console.log("Default CTO account created");
 }
 
+async function ensureDefaultCmoAccount() {
+  const existing = await User.findOne({ $or: [{ role: "cmo" }, { username: "cmo" }, { email: "cmo@robokidy.com" }] });
+  if (existing) return;
+  await User.create({
+    username: "cmo",
+    email: "cmo@robokidy.com",
+    password: "CmoRobokidy",
+    role: "cmo",
+    fullName: "Chief Marketing Officer",
+    active: true,
+    firstLogin: true
+  });
+  console.log("Default CMO account created");
+}
+
 connectDB()
   .then(async () => {
     await ensureDefaultCtoAccount();
+    await ensureDefaultCmoAccount();
     const server = app.listen(PORT, () => console.log(`API running on ${PORT}`));
     server.on("error", (error) => {
       if (error.code === "EADDRINUSE") {

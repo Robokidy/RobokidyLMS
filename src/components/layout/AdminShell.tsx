@@ -1,12 +1,18 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Award, BarChart3, Bell, BookMarked, BookOpen, BookText, Building2, CalendarDays, ClipboardList, CreditCard, FileQuestion, FileSpreadsheet, LayoutDashboard, Menu, School, Settings, ShieldCheck, Users } from "lucide-react";
+import { Award, BarChart3, Bell, BookMarked, BookOpen, BookText, BriefcaseBusiness, Building2, CalendarDays, ClipboardList, CreditCard, FileQuestion, FileSpreadsheet, LayoutDashboard, Menu, School, Settings, ShieldCheck, Target, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import DarkModeToggle from "@/components/layout/DarkModeToggle";
 
 function navForRole(role?: string) {
+  if (role === "cmo") {
+    return [
+      { label: "Marketing", items: [{ label: "CMO Dashboard", href: "/cmo", icon: LayoutDashboard }, { label: "Lead Management", href: "/cmo/leads", icon: Target }, { label: "Reports", href: "/cmo/reports", icon: FileSpreadsheet }] },
+      { label: "Pipeline", items: [{ label: "Schools Pipeline", href: "/cmo/schools", icon: Building2 }, { label: "Tuition Centres", href: "/cmo/tuition-centres", icon: BriefcaseBusiness }, { label: "Follow-Ups", href: "/cmo/follow-ups", icon: CalendarDays }] }
+    ];
+  }
   const base = role === "cto" ? "/cto" : "/admin";
   return [
     { label: "Executive", items: [{ label: role === "cto" ? "CTO Dashboard" : "CEO Dashboard", href: base, icon: LayoutDashboard }] },
@@ -38,6 +44,7 @@ function navForRole(role?: string) {
       ]
     },
     { label: "Communication", items: [{ label: "Notifications", href: `${base}/notifications`, icon: Bell }] },
+    { label: "Growth", items: [{ label: "Marketing CRM", href: `${base}/marketing`, icon: Target }] },
     { label: "Reports", items: [{ label: "School Reports", href: `${base}/reports`, icon: FileSpreadsheet }, { label: "Analytics", href: `${base}/analytics`, icon: BarChart3 }] },
     { label: "Settings", items: [{ label: "System", href: `${base}/settings`, icon: Settings }] }
   ];
@@ -51,9 +58,12 @@ function Sidebar() {
   return (
     <aside className="hidden lg:flex lg:w-72 lg:flex-col border-r bg-white/80 dark:bg-slate-950/60 backdrop-blur">
       <div className="h-20 px-6 flex items-center border-b bg-slate-950 text-white">
-        <div>
-          <p className="text-xl font-bold">Robokidy LMS</p>
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="RoboKidy logo" className="h-11 w-auto rounded bg-white p-1" />
+          <div>
+          <p className="text-xl font-bold">RoboKidy LMS</p>
           <p className="text-xs text-slate-300">Business operations console</p>
+          </div>
         </div>
       </div>
       <nav className="p-4 space-y-5 overflow-y-auto">
@@ -107,7 +117,8 @@ export default function AdminShell({ title, subtitle, children }: { title: strin
                 </SheetTrigger>
                 <SheetContent side="left" className="p-0">
                   <div className="h-20 px-6 flex items-center border-b bg-slate-950 text-white">
-                    <p className="text-lg font-bold">Robokidy LMS</p>
+                    <img src="/logo.png" alt="RoboKidy logo" className="mr-3 h-10 w-auto rounded bg-white p-1" />
+                    <p className="text-lg font-bold">RoboKidy LMS</p>
                   </div>
                   <nav className="p-4 space-y-4">
                     {mobileSections.map((section) => (

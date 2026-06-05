@@ -1,6 +1,6 @@
 import { useAuth } from "@/context/AuthContext";
 
-export type UserRole = "admin" | "teacher" | "student" | "parent";
+export type UserRole = "admin" | "cto" | "cmo" | "teacher" | "student" | "parent";
 
 export interface Permission {
   view: boolean;
@@ -19,6 +19,8 @@ export const usePermissions = () => {
   const { user } = useAuth();
 
   const isAdmin = () => user?.role === "admin";
+  const isCto = () => user?.role === "cto";
+  const isCmo = () => user?.role === "cmo";
   const isTeacher = () => user?.role === "teacher";
   const isStudent = () => user?.role === "student";
   const isParent = () => user?.role === "parent";
@@ -101,6 +103,8 @@ export const usePermissions = () => {
   return {
     // Role checks
     isAdmin,
+    isCto,
+    isCmo,
     isTeacher,
     isStudent,
     isParent,
