@@ -103,10 +103,12 @@ export default function LoginPage() {
             <img src="/logo.png" alt="RoboKidy logo" className="h-12 w-auto transition-transform duration-500 hover:rotate-[360deg]" />
             <span className="rk-heading hidden text-xl font-black text-[#1A1F5E] sm:block">RoboKidy</span>
           </button>
-          <nav className="hidden flex-1 items-center justify-center gap-6 text-sm font-semibold text-[#1A1F5E] md:flex lg:gap-8">
+          <nav className="hidden flex-1 items-center justify-center text-sm font-semibold text-[#1A1F5E] md:flex">
+            <div className="flex items-center gap-7 lg:gap-9">
             {["Home", "Courses", "Why RoboKidy?", "Contact"].map((item) => (
-              <button key={item} onClick={() => goTo(item === "Why RoboKidy?" ? "why" : item.toLowerCase())} className="min-w-20 border-b-2 border-transparent py-2 text-center hover:border-[#FFD700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD700]">{item}</button>
+              <button key={item} onClick={() => goTo(item === "Why RoboKidy?" ? "why" : item.toLowerCase())} className="border-b-2 border-transparent py-2 text-center hover:border-[#FFD700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD700]">{item}</button>
             ))}
+            </div>
           </nav>
           <div className="hidden w-32 justify-end md:flex">
             <Button onClick={() => goTo("login")} className="rounded-full bg-[#FF6B35] px-6 text-white hover:bg-[#e85b27]">Login</Button>
