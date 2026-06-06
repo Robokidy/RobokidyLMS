@@ -143,12 +143,23 @@ export default function AdminSchoolReportsPage() {
   const [endDate, setEndDate] = useState("");
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    apiFetch("/admin/schools", {}, token).then((rows) => {
-      setSchools(rows || []);
-      setSchoolId((rows || [])[0]?._id || "");
-    });
+    if (!token) return;
+    setLoading(true);
+    setError("");
+    apiFetch("/admin/schools", {}, token)
+      .then((rows) => {
+        const schoolRows = Array.isArray(rows) ? rows : [];
+        setSchools(schoolRows);
+        setSchoolId(schoolRows[0]?._id || "");
+        if (!schoolRows.length) setError("No schools are available for reporting yet.");
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load schools");
+      })
+      .finally(() => setLoading(false));
   }, [token]);
 
   const selectedSchool = useMemo(() => schools.find((school) => school._id === schoolId), [schools, schoolId]);
@@ -156,6 +167,7 @@ export default function AdminSchoolReportsPage() {
   const generate = async () => {
     if (!schoolId) return;
     setLoading(true);
+    setError("");
     try {
       const params = new URLSearchParams({ schoolId, period });
       if (period === "custom" && startDate && endDate) {
@@ -163,6 +175,9 @@ export default function AdminSchoolReportsPage() {
         params.set("endDate", endDate);
       }
       setReport(await apiFetch(`/reports/school-academic?${params.toString()}`, {}, token));
+    } catch (err) {
+      setReport(null);
+      setError(err instanceof Error ? err.message : "Failed to generate report");
     } finally {
       setLoading(false);
     }
@@ -181,6 +196,7 @@ export default function AdminSchoolReportsPage() {
         <Card className="rounded-lg">
           <CardContent className="grid gap-3 p-4 md:grid-cols-5">
             <NativeSelect value={schoolId} onChange={(event) => setSchoolId(event.target.value)}>
+              {!schools.length && <option value="">No schools found</option>}
               {schools.map((school) => <option key={school._id} value={school._id}>{school.name}</option>)}
             </NativeSelect>
             <NativeSelect value={period} onChange={(event) => setPeriod(event.target.value)}>
@@ -194,6 +210,8 @@ export default function AdminSchoolReportsPage() {
             </Button>
           </CardContent>
         </Card>
+
+        {error && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
         {report && (
           <>

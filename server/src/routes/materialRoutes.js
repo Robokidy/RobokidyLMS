@@ -105,6 +105,10 @@ function canEditMaterial(scope, material) {
     return false;
 }
 
+function canManageMaterialLibrary(scope) {
+    return ["admin", "cto", "teacher"].includes(scope.role);
+}
+
 function buildListFilter(scope, query) {
     const filter = { active: true };
 
@@ -183,7 +187,7 @@ function proxyCloudinaryFile(res, material) {
 router.post("/upload", upload.single("file"), async (req, res) => {
     try {
         const scope = getUserScope(req.authUser || req.user);
-        if (!["admin", "teacher"].includes(scope.role)) {
+        if (!canManageMaterialLibrary(scope)) {
             return res.status(403).json({ message: "Insufficient permissions" });
         }
         if (!req.file) {
@@ -283,7 +287,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 router.get("/", async (req, res) => {
     try {
         const scope = getUserScope(req.authUser || req.user);
-        if (!["admin", "teacher"].includes(scope.role)) {
+        if (!canManageMaterialLibrary(scope)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
@@ -321,7 +325,7 @@ router.get("/", async (req, res) => {
 router.get("/stats", async (req, res) => {
     try {
         const scope = getUserScope(req.authUser || req.user);
-        if (!["admin", "teacher"].includes(scope.role)) {
+        if (!canManageMaterialLibrary(scope)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
@@ -358,7 +362,7 @@ router.get("/stats", async (req, res) => {
 router.get("/:id", async (req, res) => {
     try {
         const scope = getUserScope(req.authUser || req.user);
-        if (!["admin", "teacher"].includes(scope.role)) {
+        if (!canManageMaterialLibrary(scope)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
@@ -390,7 +394,7 @@ router.get("/:id", async (req, res) => {
 router.get("/:id/file", async (req, res) => {
     try {
         const scope = getUserScope(req.authUser || req.user);
-        if (!["admin", "teacher"].includes(scope.role)) {
+        if (!canManageMaterialLibrary(scope)) {
             return res.status(403).json({ message: "Access denied" });
         }
         const material = await Material.findOne({ _id: req.params.id, active: true }).lean();
@@ -509,7 +513,7 @@ router.post("/:id/replace", upload.single("file"), async (req, res) => {
 router.post("/:id/duplicate", async (req, res) => {
     try {
         const scope = getUserScope(req.authUser || req.user);
-        if (!["admin", "teacher"].includes(scope.role)) {
+        if (!canManageMaterialLibrary(scope)) {
             return res.status(403).json({ message: "Insufficient permissions" });
         }
 
@@ -649,7 +653,7 @@ router.post("/:id/assign", async (req, res) => {
 router.get("/:id/analytics", async (req, res) => {
     try {
         const scope = getUserScope(req.authUser || req.user);
-        if (!["admin", "teacher"].includes(scope.role)) {
+        if (!canManageMaterialLibrary(scope)) {
             return res.status(403).json({ message: "Access denied" });
         }
 

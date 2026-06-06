@@ -151,7 +151,8 @@ export const UnifiedMaterialsPage: React.FC<{
   };
 
   const handleOpenSecureViewer = (material: any) => {
-    const base = shell === "teacher" ? "/teacher/materials" : shell === "admin" ? "/admin/materials" : "/student/materials";
+    const executiveBase = user?.role === "cto" ? "/cto/materials" : "/admin/materials";
+    const base = shell === "teacher" ? "/teacher/materials" : shell === "admin" ? executiveBase : "/student/materials";
     navigate(`${base}/${material._id}`);
   };
 

@@ -270,7 +270,7 @@ export default function MaterialViewerPage() {
   }, []);
 
   const watermark = material?.viewer?.watermark || `${user?.username || "user"} | protected`;
-  const backPath = user?.role === "admin" ? "/admin/materials" : user?.role === "teacher" ? "/teacher/materials" : "/student/materials";
+  const backPath = user?.role === "admin" ? "/admin/materials" : user?.role === "cto" ? "/cto/materials" : user?.role === "teacher" ? "/teacher/materials" : "/student/materials";
   const blockPointerEvent = (event: React.SyntheticEvent) => {
     event.preventDefault();
     event.stopPropagation();
