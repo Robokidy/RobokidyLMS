@@ -579,6 +579,22 @@ function SettingsView() {
     }
   };
 
+  const changeUsername = async (account: any) => {
+    const username = window.prompt(`New username for ${account.fullName || account.username}`, account.username || "");
+    if (username === null) return;
+    const normalized = username.trim().toLowerCase();
+    if (!normalized) return toast.error("Username is required");
+    if (normalized === account.username) return;
+
+    try {
+      const result = await apiFetch(`/admin/accounts/${account._id}`, { method: "PUT", body: { username: normalized } }, token);
+      toast.success(`Username updated to ${result.username}`);
+      loadAccounts();
+    } catch (err: any) {
+      toast.error(err.message || "Unable to update username");
+    }
+  };
+
   return (
     <div className="space-y-4">
       {tempCredential && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800">{tempCredential}</div>}
@@ -595,12 +611,12 @@ function SettingsView() {
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, username, email, student ID, employee ID" />
             <NativeSelect value={role} onChange={(event) => setRole(event.target.value)}>
               <option value="">All roles</option>
-              {["cto", "cmo", "teacher", "student", "parent"].map((item) => <option key={item} value={item}>{item}</option>)}
+              {["admin", "cto", "cmo", "teacher", "student", "parent"].map((item) => <option key={item} value={item}>{item}</option>)}
             </NativeSelect>
             <Button onClick={loadAccounts}><Search className="mr-2 h-4 w-4" />Search</Button>
           </div>
           <div className="overflow-x-auto rounded-md border">
-            <table className="w-full min-w-[920px] text-sm">
+            <table className="w-full min-w-[980px] text-sm">
               <thead className="bg-slate-50 text-left text-slate-500 dark:bg-slate-900">
                 <tr>{["User", "Role", "School", "Status", "First Login", "Updated", "Action"].map((head) => <th key={head} className="px-3 py-2 font-medium">{head}</th>)}</tr>
               </thead>
@@ -617,9 +633,14 @@ function SettingsView() {
                     <td className="px-3 py-2">{account.firstLogin ? "Required" : "Completed"}</td>
                     <td className="px-3 py-2">{account.updatedAt ? new Date(account.updatedAt).toLocaleDateString() : "-"}</td>
                     <td className="px-3 py-2">
-                      <Button size="sm" variant="outline" disabled={account.role === "admin"} onClick={() => resetPassword(account)}>
-                        <KeyRound className="mr-2 h-4 w-4" />Temp Password
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" onClick={() => changeUsername(account)}>
+                          <Edit3 className="mr-2 h-4 w-4" />Username
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={account.role === "admin"} onClick={() => resetPassword(account)}>
+                          <KeyRound className="mr-2 h-4 w-4" />Temp Password
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

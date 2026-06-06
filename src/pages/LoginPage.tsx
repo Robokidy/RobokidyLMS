@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, ChevronLeft, ChevronRight, Eye, EyeOff, Lock, Menu, Rocket, Sparkles, Trophy, User, X } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Eye, EyeOff, Instagram, Lock, Mail, MapPin, Menu, Phone, Rocket, Sparkles, Trophy, User, X } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -98,20 +98,20 @@ export default function LoginPage() {
       `}</style>
 
       <header className="sticky top-0 z-50 border-b border-white/40 bg-white/75 backdrop-blur-xl">
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6">
+        <div className="mx-auto flex h-20 max-w-7xl items-center gap-6 px-4 sm:px-6">
           <button onClick={() => goTo("home")} className="flex items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6B35]" aria-label="RoboKidy home">
             <img src="/logo.png" alt="RoboKidy logo" className="h-12 w-auto transition-transform duration-500 hover:rotate-[360deg]" />
             <span className="rk-heading hidden text-xl font-black text-[#1A1F5E] sm:block">RoboKidy</span>
           </button>
-          <nav className="hidden items-center gap-8 text-sm font-semibold text-[#1A1F5E] md:flex">
+          <nav className="hidden flex-1 items-center justify-center gap-6 text-sm font-semibold text-[#1A1F5E] md:flex lg:gap-8">
             {["Home", "Courses", "Why RoboKidy?", "Contact"].map((item) => (
-              <button key={item} onClick={() => goTo(item === "Why RoboKidy?" ? "why" : item.toLowerCase())} className="border-b-2 border-transparent py-2 hover:border-[#FFD700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD700]">{item}</button>
+              <button key={item} onClick={() => goTo(item === "Why RoboKidy?" ? "why" : item.toLowerCase())} className="min-w-20 border-b-2 border-transparent py-2 text-center hover:border-[#FFD700] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD700]">{item}</button>
             ))}
           </nav>
-          <div className="hidden md:block">
+          <div className="hidden w-32 justify-end md:flex">
             <Button onClick={() => goTo("login")} className="rounded-full bg-[#FF6B35] px-6 text-white hover:bg-[#e85b27]">Login</Button>
           </div>
-          <button className="rounded-md p-2 md:hidden" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle navigation">
+          <button className="ml-auto rounded-md p-2 md:hidden" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle navigation">
             {mobileOpen ? <X /> : <Menu />}
           </button>
         </div>
@@ -144,7 +144,9 @@ export default function LoginPage() {
             </div>
             <div className="relative mx-auto w-full max-w-xl animate-[floaty_4s_ease-in-out_infinite]">
               <div className="absolute inset-6 rounded-full bg-[#FFD700]/25 blur-3xl" />
-              <img src="/legospikeprime.png" alt="RoboKidy robotics course kit" className="relative aspect-square w-full rounded-[2rem] object-cover shadow-2xl ring-8 ring-white/15" />
+              <div className="relative overflow-hidden rounded-[2rem] bg-white/95 p-2 shadow-2xl ring-8 ring-white/15">
+                <img src="/legospikeprime.png" alt="RoboKidy robotics course kit" className="max-h-[580px] w-full object-contain" />
+              </div>
             </div>
           </div>
         </section>
@@ -282,14 +284,28 @@ export default function LoginPage() {
 
       <footer id="contact" className="bg-[#1A1F5E] text-white">
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-          <div className="flex flex-col justify-between gap-8 md:flex-row">
+          <div className="grid gap-8 lg:grid-cols-[1fr_1.4fr]">
             <div>
               <img src="/logo.png" alt="RoboKidy logo" className="h-14 w-auto rounded-md bg-white p-1" />
               <p className="mt-4 max-w-md text-white/75">RoboKidy Innovative Centre - Empowering Young Minds Through STEM</p>
             </div>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div><p className="font-bold">Courses</p><p className="mt-2 text-sm text-white/70">Python | Scratch | LEGO WeDo | LEGO Spike | TinkerCAD | Arduino</p></div>
-              <div><p className="font-bold">Links</p><p className="mt-2 text-sm text-white/70">About | Contact | Privacy Policy</p></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <a href="tel:+918300967241" className="flex gap-3 rounded-lg bg-white/10 p-4 text-sm text-white/80 transition hover:bg-white/15">
+                <Phone className="mt-0.5 h-5 w-5 shrink-0 text-[#FFD700]" />
+                <span><span className="block font-bold text-white">Phone</span>+91 8300967241</span>
+              </a>
+              <a href="mailto:robokidy@gmail.com" className="flex gap-3 rounded-lg bg-white/10 p-4 text-sm text-white/80 transition hover:bg-white/15">
+                <Mail className="mt-0.5 h-5 w-5 shrink-0 text-[#FFD700]" />
+                <span><span className="block font-bold text-white">Email</span>robokidy@gmail.com</span>
+              </a>
+              <a href="https://www.instagram.com/robokidy.info/" target="_blank" rel="noreferrer" className="flex gap-3 rounded-lg bg-white/10 p-4 text-sm text-white/80 transition hover:bg-white/15">
+                <Instagram className="mt-0.5 h-5 w-5 shrink-0 text-[#FFD700]" />
+                <span><span className="block font-bold text-white">Instagram</span>@robokidy.info</span>
+              </a>
+              <div className="flex gap-3 rounded-lg bg-white/10 p-4 text-sm leading-6 text-white/80 sm:col-span-2">
+                <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[#FFD700]" />
+                <span><span className="block font-bold text-white">Address</span>91/3, Ramachandra Nagar, Eamapper, Kallakuruchi - 606202, Tamil Nadu, India</span>
+              </div>
             </div>
           </div>
           <p className="mt-8 border-t border-white/15 pt-5 text-sm text-white/60">Copyright 2026 RoboKidy. Made with care for curious young minds.</p>

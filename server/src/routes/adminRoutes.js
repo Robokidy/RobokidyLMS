@@ -906,6 +906,33 @@ router.post("/accounts/:id/reset-password", requireAdmin, async (req, res) => {
   });
 });
 
+router.put("/accounts/:id", requireAdmin, async (req, res) => {
+  try {
+    const account = await User.findById(req.params.id);
+    if (!account) return res.status(404).json({ message: "Account not found" });
+
+    const username = safeText(req.body.username).toLowerCase();
+    if (!username) return res.status(400).json({ message: "Username is required" });
+
+    const duplicate = await User.exists({ _id: { $ne: account._id }, username });
+    if (duplicate) return res.status(409).json({ message: "Username already available, please choose another username" });
+
+    account.username = username;
+    await account.save();
+    await ActivityLog.create({ userId: req.user.id, action: "account_username_updated", meta: { accountId: account._id, role: account.role, username } });
+
+    res.json({
+      id: account._id,
+      username: account.username,
+      role: account.role,
+      message: "Username updated"
+    });
+  } catch (error) {
+    console.error("Account username update failed:", error.message);
+    res.status(503).json({ message: "Database connection unavailable. Please check MongoDB Atlas/network DNS and try again." });
+  }
+});
+
 router.post("/students", async (req, res) => {
   const username = req.body.username
     ? String(req.body.username).trim().toLowerCase()
