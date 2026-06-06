@@ -6,9 +6,10 @@ const morgan = require("morgan");
 const path = require("path");
 const connectDB = require("./config/db");
 const User = require("./models/User");
+const { ensureExecutiveAccount } = require("./utils/executiveAccounts");
 
 const requiredEnv = ["MONGODB_URI", "JWT_SECRET"];
-const recommendedEnv = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "NODE_ENV", "JUDGE0_API_KEY", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"];
+const recommendedEnv = ["ADMIN_USERNAME", "ADMIN_PASSWORD", "CTO_PASSWORD", "CMO_PASSWORD", "NODE_ENV", "JUDGE0_API_KEY", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"];
 for (const name of requiredEnv) {
   if (!process.env[name]) {
     console.error(`Missing required environment variable: ${name}`);
@@ -126,40 +127,10 @@ app.use((error, _req, res, _next) => {
 
 const PORT = process.env.PORT || 5000;
 
-async function ensureDefaultCtoAccount() {
-  const existing = await User.findOne({ $or: [{ role: "cto" }, { username: "cto" }, { email: "cto@robokidy.com" }] });
-  if (existing) return;
-  await User.create({
-    username: "cto",
-    email: "cto@robokidy.com",
-    password: "CtoRobokidy",
-    role: "cto",
-    fullName: "Chief Technology Officer",
-    active: true,
-    firstLogin: true
-  });
-  console.log("Default CTO account created");
-}
-
-async function ensureDefaultCmoAccount() {
-  const existing = await User.findOne({ $or: [{ role: "cmo" }, { username: "cmo" }, { email: "cmo@robokidy.com" }] });
-  if (existing) return;
-  await User.create({
-    username: "cmo",
-    email: "cmo@robokidy.com",
-    password: "CmoRobokidy",
-    role: "cmo",
-    fullName: "Chief Marketing Officer",
-    active: true,
-    firstLogin: true
-  });
-  console.log("Default CMO account created");
-}
-
 connectDB()
   .then(async () => {
-    await ensureDefaultCtoAccount();
-    await ensureDefaultCmoAccount();
+    await ensureExecutiveAccount(User, "cto");
+    await ensureExecutiveAccount(User, "cmo");
     const server = app.listen(PORT, () => console.log(`API running on ${PORT}`));
     server.on("error", (error) => {
       if (error.code === "EADDRINUSE") {

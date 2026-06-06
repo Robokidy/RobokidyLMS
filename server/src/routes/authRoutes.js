@@ -32,9 +32,15 @@ router.get("/username", async (req, res) => {
 
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  const normalizedUsername = String(username || "").trim().toLowerCase();
-  const user = await User.findOne({ username: normalizedUsername });
+  const normalizedIdentifier = String(username || "").trim().toLowerCase();
+  const user = await User.findOne({
+    $or: [
+      { username: normalizedIdentifier },
+      { email: normalizedIdentifier }
+    ]
+  });
   if (!user) return res.status(401).json({ message: "Invalid credentials" });
+  if (!user.active) return res.status(403).json({ message: "Account disabled" });
 
   const ok = await bcrypt.compare(password, user.password);
   if (!ok) return res.status(401).json({ message: "Invalid credentials" });

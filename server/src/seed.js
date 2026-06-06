@@ -5,18 +5,7 @@ const Lesson = require("./models/Lesson");
 const Quiz = require("./models/Quiz");
 const { ensureBaseCourses } = require("./utils/courses");
 const { DEFAULT_FIRST_PASSWORD } = require("./utils/password");
-
-const CTO_DEFAULT = {
-  username: "cto",
-  email: "cto@robokidy.com",
-  password: "CtoRobokidy"
-};
-
-const CMO_DEFAULT = {
-  username: "cmo",
-  email: "cmo@robokidy.com",
-  password: "CmoRobokidy"
-};
+const { ensureExecutiveAccount } = require("./utils/executiveAccounts");
 
 const topics = [
   "Python Introduction",
@@ -108,51 +97,8 @@ const mkQuestions = (topic) => questionBank[topic] || [];
     console.log("Admin updated");
   }
 
-  let cto = await User.findOne({ role: "cto" });
-  if (!cto) {
-    cto = await User.create({
-      username: CTO_DEFAULT.username,
-      email: CTO_DEFAULT.email,
-      password: CTO_DEFAULT.password,
-      role: "cto",
-      active: true,
-      firstLogin: true,
-      fullName: "Chief Technology Officer"
-    });
-    console.log("CTO created");
-  } else {
-    cto.username = CTO_DEFAULT.username;
-    cto.email = CTO_DEFAULT.email;
-    cto.password = CTO_DEFAULT.password;
-    cto.active = true;
-    cto.firstLogin = true;
-    cto.fullName = cto.fullName || "Chief Technology Officer";
-    await cto.save();
-    console.log("CTO updated");
-  }
-
-  let cmo = await User.findOne({ role: "cmo" });
-  if (!cmo) {
-    cmo = await User.create({
-      username: CMO_DEFAULT.username,
-      email: CMO_DEFAULT.email,
-      password: CMO_DEFAULT.password,
-      role: "cmo",
-      active: true,
-      firstLogin: true,
-      fullName: "Chief Marketing Officer"
-    });
-    console.log("CMO created");
-  } else {
-    cmo.username = CMO_DEFAULT.username;
-    cmo.email = CMO_DEFAULT.email;
-    cmo.password = CMO_DEFAULT.password;
-    cmo.active = true;
-    cmo.firstLogin = true;
-    cmo.fullName = cmo.fullName || "Chief Marketing Officer";
-    await cmo.save();
-    console.log("CMO updated");
-  }
+  await ensureExecutiveAccount(User, "cto", { rotatePassword: true });
+  await ensureExecutiveAccount(User, "cmo", { rotatePassword: true });
 
   const courses = await ensureBaseCourses();
   const pythonCourse = courses.find((course) => course.slug === "python");
