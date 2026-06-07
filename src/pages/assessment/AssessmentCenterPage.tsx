@@ -308,7 +308,17 @@ export default function AssessmentCenterPage() {
                         <TableCell>{(test.classSectionIds || []).map((klass: any) => klass.name).join(", ") || "-"}</TableCell>
                         <TableCell><Badge>{test.status}</Badge></TableCell>
                         <TableCell>{test.questions?.length || 0}</TableCell>
-                        {!isStaff && <TableCell className="text-right"><Button asChild size="sm"><Link to={`/student/tests/${test._id}`}>Attempt</Link></Button></TableCell>}
+                        {!isStaff && (
+                          <TableCell className="text-right">
+                            {test.alreadyAttempted ? (
+                              <Badge variant="secondary">Completed {test.attemptScore ?? 0}%</Badge>
+                            ) : (
+                              <Button asChild size="sm">
+                                <Link to={`/student/tests/${test._id}`}>{test.attemptStatus === "in-progress" ? "Continue" : "Attempt"}</Link>
+                              </Button>
+                            )}
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>

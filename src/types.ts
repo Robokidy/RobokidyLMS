@@ -33,8 +33,18 @@ export type Lesson = {
   isPublished?: boolean;
   publishedDate?: string;
   examples: Array<{ code: string; output: string; explanation: string }>;
+  quizAvailable?: boolean;
+  quizQuestionCount?: number;
+  quizAttempted?: boolean;
+  quizScore?: number;
 };
-export type Quiz = { _id: string; lessonId: string; questions: Array<{ question: string; options: string[]; correctAnswer: number }> };
+export type Quiz = {
+  _id: string;
+  lessonId: string;
+  questions: Array<{ question: string; options: string[]; correctAnswer: number }>;
+  alreadyAttempted?: boolean;
+  attempt?: { attempts: number; lastAttemptScore: number; bestScore: number } | null;
+};
 export type Grade =
   | "grade1"
   | "grade2"

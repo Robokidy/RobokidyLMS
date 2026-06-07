@@ -56,20 +56,20 @@ function Sidebar() {
   const sections = navForRole(user?.role);
 
   return (
-    <aside className="hidden lg:flex lg:w-72 lg:flex-col border-r bg-white/80 dark:bg-slate-950/60 backdrop-blur">
-      <div className="h-20 px-6 flex items-center border-b bg-slate-950 text-white">
+    <aside className="hidden lg:flex lg:w-[220px] lg:flex-col bg-[#0f1117] text-white">
+      <div className="h-20 px-5 flex items-center border-b border-white/10">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="RoboKidy logo" className="h-11 w-auto rounded bg-white p-1" />
-          <div>
-          <p className="text-xl font-bold">RoboKidy LMS</p>
-          <p className="text-xs text-slate-300">Business operations console</p>
+          <img src="/logo.png" alt="RoboKidy logo" className="h-9 w-9 rounded-lg bg-white p-1 object-contain" />
+          <div className="min-w-0">
+          <p className="truncate text-sm font-bold">RoboKidy LMS</p>
+          <p className="text-[11px] text-white/40">Business console</p>
           </div>
         </div>
       </div>
-      <nav className="p-4 space-y-5 overflow-y-auto">
+      <nav className="p-3 space-y-4 overflow-y-auto">
         {sections.map((section) => (
           <div key={section.label}>
-            <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{section.label}</p>
+            <p className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[0.12em] text-white/30">{section.label}</p>
             <div className="space-y-1">
               {section.items.map((item) => {
                 const Icon = item.icon;
@@ -78,10 +78,10 @@ function Sidebar() {
                   <Link
                     key={`${item.label}-${item.href}`}
                     to={item.href}
-                    className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all ${
+                    className={`flex items-center gap-3 rounded-lg border-l-[3px] px-2.5 py-2 text-[13px] transition-all ${
                       active
-                        ? "bg-slate-950 text-white shadow-sm dark:bg-white dark:text-slate-950"
-                        : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
+                        ? "border-[#1a56db] bg-[#1a56db]/20 text-white"
+                        : "border-transparent text-white/60 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
                     <Icon className="h-4 w-4" />
@@ -102,12 +102,12 @@ export default function AdminShell({ title, subtitle, children }: { title: strin
   const mobileSections = navForRole(user?.role);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="min-h-screen bg-[#f8f7f4] text-[#0f1117]">
       <div className="flex min-h-screen">
         <Sidebar />
 
         <div className="flex-1 flex flex-col">
-          <header className="h-20 border-b bg-white/90 dark:bg-slate-950/80 backdrop-blur px-4 lg:px-8 flex items-center justify-between">
+          <header className="h-20 border-b border-black/[0.08] bg-white/90 backdrop-blur px-4 lg:px-8 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Sheet>
                 <SheetTrigger asChild>
@@ -139,15 +139,15 @@ export default function AdminShell({ title, subtitle, children }: { title: strin
                 </SheetContent>
               </Sheet>
               <div>
-                <h1 className="text-xl lg:text-2xl font-bold tracking-tight">{title}</h1>
-                <p className="text-sm text-muted-foreground">{subtitle}</p>
+                <h1 className="text-2xl font-extrabold tracking-[-0.5px]">{title}</h1>
+                <p className="text-sm text-[#6b7280]">{subtitle}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="hidden md:block text-sm text-muted-foreground">{user?.username}</span>
+              <span className="hidden md:block text-sm text-[#6b7280]">{user?.username}</span>
               <DarkModeToggle />
-              <Button variant="destructive" onClick={logout}>Logout</Button>
+              <Button className="rounded-full bg-[#dc2626] px-4 text-white hover:bg-red-700" onClick={logout}>Logout</Button>
             </div>
           </header>
 

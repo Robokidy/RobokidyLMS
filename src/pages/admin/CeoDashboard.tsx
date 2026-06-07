@@ -67,28 +67,28 @@ export default function CeoDashboard() {
     <AdminShell title={user?.role === "cto" ? "CTO Dashboard" : "CEO Dashboard"} subtitle={user?.role === "cto" ? "Operational command center for teachers, curriculum, academic delivery, and reports" : "Executive health across schools, revenue, attendance, assessments, and learning operations"}>
       {error && <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {visibleKpis.map((card) => {
           const Icon = card.icon;
           return (
-            <Card key={card.key} className="rounded-lg shadow-sm">
+            <Card key={card.key} className="rk-card">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm text-slate-500">{card.label}</CardTitle>
-                <span className="grid h-9 w-9 place-items-center rounded-md bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                <CardTitle className="rk-label">{card.label}</CardTitle>
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-[#1a56db]">
                   <Icon className="h-4 w-4" />
                 </span>
               </CardHeader>
               <CardContent>
                 <div className="flex items-end justify-between gap-3">
-                  <p className="text-2xl font-bold">{loading ? "..." : displayValue(stats, card)}</p>
-                  <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                  <p className="text-[28px] font-extrabold tracking-tight">{loading ? "..." : displayValue(stats, card)}</p>
+                  <Badge className="rk-status-paid">
                     <ArrowUpRight className="mr-1 h-3 w-3" />{card.trend}
                   </Badge>
                 </div>
                 <div className="mt-4 h-8">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={trend}>
-                      <Area type="monotone" dataKey={card.money ? "revenue" : "students"} stroke="#0f172a" fill="#e2e8f0" strokeWidth={2} />
+                      <Area type="monotone" dataKey={card.money ? "revenue" : "students"} stroke="#1a56db" fill="#dbeafe" strokeWidth={2} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -99,10 +99,10 @@ export default function CeoDashboard() {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1.5fr_0.9fr]">
-        <Card className="rounded-lg">
+        <Card className="rk-card">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Executive Performance</CardTitle>
-            <Badge variant="outline">Live LMS Signals</Badge>
+            <Badge variant="outline" className="gap-2 rounded-full border-emerald-200 bg-emerald-50 text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500 [animation:pulse_1.4s_ease-in-out_infinite]" />Live LMS Signals</Badge>
           </CardHeader>
           <CardContent className="h-80">
             <ResponsiveContainer width="100%" height="100%">
@@ -111,14 +111,14 @@ export default function CeoDashboard() {
                 <XAxis dataKey="name" hide={performance.length > 6} />
                 <YAxis domain={[0, 100]} />
                 <Tooltip />
-                <Bar dataKey="progress" fill="#0f172a" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="quiz" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="progress" fill="#1a56db" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="quiz" fill="#7c3aed" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card className="rounded-lg">
+        <Card className="rk-card">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Quick Actions</CardTitle>
             <Plus className="h-4 w-4 text-slate-500" />
@@ -139,7 +139,7 @@ export default function CeoDashboard() {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1fr]">
-        <Card className="rounded-lg">
+        <Card className="rk-card">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Marketing Overview</CardTitle>
             <Target className="h-4 w-4 text-slate-500" />
@@ -153,8 +153,8 @@ export default function CeoDashboard() {
               ["Meetings", marketingSummary.meetingsCompleted || 0],
               ["Pending Follow-Ups", marketingSummary.followUpsPending || 0]
             ].map(([label, value]) => (
-              <div key={label} className="rounded-md border bg-white p-3 dark:bg-slate-900">
-                <p className="text-xs text-slate-500">{label}</p>
+              <div key={label} className="rounded-lg border border-black/[0.08] bg-white p-3">
+                <p className="rk-label">{label}</p>
                 <p className="mt-1 text-xl font-bold">{value}</p>
               </div>
             ))}
@@ -162,7 +162,7 @@ export default function CeoDashboard() {
         </Card>
 
         {user?.role === "cto" && (
-          <Card className="rounded-lg">
+          <Card className="rk-card">
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle>School Onboarding</CardTitle>
               <Handshake className="h-4 w-4 text-slate-500" />
@@ -184,7 +184,7 @@ export default function CeoDashboard() {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <Card className="rounded-lg">
+        <Card className="rk-card">
           <CardHeader><CardTitle>Recent Activity</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {(stats?.recentActivities || []).slice(0, 6).map((activity: any, index: number) => (
@@ -202,7 +202,7 @@ export default function CeoDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-lg">
+        <Card className="rk-card">
           <CardHeader><CardTitle>Growth & Revenue Trend</CardTitle></CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer width="100%" height="100%">

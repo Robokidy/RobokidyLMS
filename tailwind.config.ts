@@ -18,7 +18,21 @@ export default {
 			}
 		},
 		extend: {
+			fontFamily: {
+				sans: ['"DM Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+			},
 			colors: {
+				brand: {
+					bg: '#f8f7f4',
+					sidebar: '#0f1117',
+					blue: '#1a56db',
+					violet: '#7c3aed',
+					success: '#059669',
+					warning: '#d97706',
+					danger: '#dc2626',
+					text: '#0f1117',
+					muted: '#6b7280',
+				},
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',

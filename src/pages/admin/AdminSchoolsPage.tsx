@@ -56,28 +56,28 @@ function datedExportName(label: string, extension = "csv", scope = "Robokidy") {
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="space-y-1.5"><Label className="text-xs text-slate-500">{label}</Label>{children}</div>;
+  return <div className="space-y-1.5"><Label className="rk-label">{label}</Label>{children}</div>;
 }
 
 function NativeSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`h-10 w-full rounded-md border border-input bg-background px-3 text-sm ${props.className || ""}`} />;
+  return <select {...props} className={`h-10 w-full rounded-lg border border-black/[0.12] bg-white px-3 text-sm text-[#0f1117] ${props.className || ""}`} />;
 }
 
 function EmptyState({ title, action }: { title: string; action?: ReactNode }) {
-  return <div className="rounded-lg border border-dashed bg-white py-12 text-center dark:bg-slate-900"><p className="text-sm text-slate-500">{title}</p>{action && <div className="mt-4">{action}</div>}</div>;
+  return <div className="rounded-[14px] border border-dashed border-black/[0.12] bg-white py-12 text-center"><p className="text-sm text-slate-500">{title}</p>{action && <div className="mt-4">{action}</div>}</div>;
 }
 
 function SkeletonGrid() {
-  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-44 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />)}</div>;
+  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-44 animate-pulse rounded-[14px] bg-white/70 shadow-sm" />)}</div>;
 }
 
 function Metric({ label, value, icon: Icon }: any) {
-  return <div className="rounded-lg border bg-white p-4 shadow-sm dark:bg-slate-900"><div className="flex items-center justify-between"><p className="text-sm text-slate-500">{label}</p><Icon className="h-4 w-4 text-slate-500" /></div><p className="mt-2 text-2xl font-bold">{value}</p></div>;
+  return <div className="rk-card p-4"><div className="flex items-center justify-between"><p className="rk-label">{label}</p><span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-[#1a56db]"><Icon className="h-4 w-4" /></span></div><p className="mt-2 text-[28px] font-extrabold tracking-tight">{value}</p><div className="mt-3 h-1.5 rounded-full bg-slate-100"><span className="block h-full w-2/3 rounded-full bg-[#1a56db]" /></div></div>;
 }
 
 function AvatarTile({ src, label }: { src?: string; label: string }) {
   const initials = label.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "RK";
-  return src ? <img src={src} alt="" className="h-12 w-12 rounded-full object-cover" /> : <span className="grid h-12 w-12 place-items-center rounded-full bg-slate-950 text-sm font-bold text-white">{initials}</span>;
+  return src ? <img src={src} alt="" className="h-12 w-12 rounded-full object-cover" /> : <span className="grid h-12 w-12 place-items-center rounded-full bg-blue-100 text-sm font-bold text-blue-800">{initials}</span>;
 }
 
 function exportCsv(filename: string, headers: string[], rows: any[][]) {
@@ -381,12 +381,12 @@ export default function AdminSchoolsPage({ mode = "admin" }: { mode?: "admin" | 
       {credential && <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800">{credential}</div>}
 
       {pageKey !== "settings" && (
-        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="rk-card mb-5 flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-1 flex-col gap-3 md:flex-row">
             {["schools", "teachers", "students", "classes", "fees", "notifications"].includes(pageKey) && (
               <div className="relative md:w-80">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${pageKey}`} />
+                <Input className="h-10 rounded-lg border-black/[0.12] bg-white pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${pageKey}`} />
               </div>
             )}
             {["teachers", "classes", "students", "fees"].includes(pageKey) && (
@@ -428,7 +428,7 @@ export default function AdminSchoolsPage({ mode = "admin" }: { mode?: "admin" | 
                 <Button variant="outline" onClick={() => setStudentView(studentView === "cards" ? "sheet" : "cards")}>{studentView === "cards" ? <Table2 className="mr-2 h-4 w-4" /> : <LayoutGrid className="mr-2 h-4 w-4" />}{studentView === "cards" ? "Spreadsheet" : "Cards"}</Button>
               </>
             )}
-            {actionButton && <Button onClick={() => openCreate(actionButton[1])}><Plus className="mr-2 h-4 w-4" />{actionButton[0]}</Button>}
+            {actionButton && <Button className="rounded-lg bg-[#1a56db] text-white hover:bg-blue-700" onClick={() => openCreate(actionButton[1])}><Plus className="mr-2 h-4 w-4" />{actionButton[0]}</Button>}
           </div>
         </div>
       )}
@@ -447,7 +447,7 @@ export default function AdminSchoolsPage({ mode = "admin" }: { mode?: "admin" | 
       )}
 
       <Dialog open={Boolean(viewing)} onOpenChange={(open) => !open && setViewing(null)}>
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto rounded-2xl border-0 bg-white shadow-[0_24px_64px_rgba(0,0,0,0.15)]">
           <DialogHeader><DialogTitle>{relationName(viewing)}</DialogTitle></DialogHeader>
           {viewing && <ProfileView entity={viewing} type={pageKey} students={students} teachers={teachers} classes={classes} courses={courses} fees={fees} attendance={attendance} teacherWorkforce={teacherWorkforce} onTeacherAttendance={markTeacherAttendance} onHoliday={createTeacherHoliday} onHolidayDelete={archiveTeacherHoliday} />}
         </DialogContent>
@@ -529,12 +529,87 @@ function FeesView({ rows }: any) {
   const exportRows = rows.map((fee: any) => [relationName(fee.studentId), relationName(fee.schoolId), relationName(fee.classSectionId), fee.totalFees, fee.paidAmount, fee.pendingAmount ?? Math.max(0, Number(fee.totalFees || 0) - Number(fee.paidAmount || 0)), fee.status, fee.lastPaymentDate ? new Date(fee.lastPaymentDate).toLocaleDateString() : ""]);
   const headers = ["Student", "School", "Class", "Total", "Paid", "Balance", "Status", "Last Payment"];
   const chart = rows.slice(0, 8).map((fee: any, index: number) => ({ name: `M${index + 1}`, paid: Number(fee.paidAmount || 0), pending: Math.max(0, Number(fee.totalFees || 0) - Number(fee.paidAmount || 0)) }));
-  return <div className="space-y-4"><div className="grid gap-3 md:grid-cols-4"><Metric label="Expected Revenue" value={formatCurrency(total)} icon={CreditCard} /><Metric label="Collected Revenue" value={formatCurrency(paid)} icon={CheckCircle2} /><Metric label="Pending Revenue" value={formatCurrency(pending)} icon={CalendarCheck} /><Metric label="Overdue Collection" value={formatCurrency(overdue)} icon={CalendarCheck} /></div><Card className="rounded-lg"><CardHeader className="flex-row items-center justify-between"><CardTitle>Fee Analytics</CardTitle><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => exportCsv(datedExportName("Fees"), headers, exportRows)}><Download className="mr-2 h-4 w-4" />CSV</Button><Button variant="outline" onClick={() => exportXlsx(datedExportName("Fees", "xlsx"), headers, exportRows)}><Download className="mr-2 h-4 w-4" />Excel</Button><Button variant="outline" onClick={() => window.print()}><Download className="mr-2 h-4 w-4" />PDF</Button></div></CardHeader><CardContent className="h-72"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" /><YAxis /><Tooltip /><Bar dataKey="paid" fill="#16a34a" radius={[4, 4, 0, 0]} /><Bar dataKey="pending" fill="#f97316" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card><div className="grid gap-3">{rows.map((fee: any) => <div key={fee._id} className="grid gap-3 rounded-lg border bg-white p-4 md:grid-cols-7 dark:bg-slate-900"><p className="font-medium">{relationName(fee.studentId)}</p><p className="text-slate-500">{relationName(fee.classSectionId)}</p><p>{formatCurrency(fee.totalFees, fee.currency)}</p><p>Paid {formatCurrency(fee.paidAmount, fee.currency)}</p><p>Balance {formatCurrency(fee.pendingAmount, fee.currency)}</p><p>{fee.lastPaymentDate ? new Date(fee.lastPaymentDate).toLocaleDateString() : "-"}</p><Badge className="w-fit" variant={fee.status === "paid" ? "default" : "secondary"}>{feeLabel(fee.status)}</Badge></div>)}</div></div>;
+  const statusClass = (status?: string) => status === "paid" ? "rk-status-paid" : status === "overdue" ? "rk-status-overdue" : "rk-status-pending";
+  return <div className="space-y-5">
+    <div className="grid gap-4 md:grid-cols-4">
+      <Metric label="Expected" value={formatCurrency(total)} icon={CreditCard} />
+      <Metric label="Collected" value={formatCurrency(paid)} icon={CheckCircle2} />
+      <Metric label="Pending" value={formatCurrency(pending)} icon={CalendarCheck} />
+      <Metric label="Overdue" value={formatCurrency(overdue)} icon={CalendarCheck} />
+    </div>
+    <Card className="rk-card">
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle>Fee Analytics</CardTitle>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => exportCsv(datedExportName("Fees"), headers, exportRows)}><Download className="mr-2 h-4 w-4" />CSV</Button>
+          <Button variant="outline" onClick={() => exportXlsx(datedExportName("Fees", "xlsx"), headers, exportRows)}><Download className="mr-2 h-4 w-4" />Excel</Button>
+          <Button variant="outline" onClick={() => window.print()}><Download className="mr-2 h-4 w-4" />PDF</Button>
+        </div>
+      </CardHeader>
+      <CardContent className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chart}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.08)" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Bar dataKey="paid" fill="#1a56db" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="pending" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+    <div className="rk-table-wrap">
+      <table className="w-full min-w-[980px] text-sm">
+        <thead className="bg-slate-50 text-left text-[12px] font-bold uppercase tracking-[0.05em] text-slate-400">
+          <tr>{["Student", "Class", "Amount", "Paid", "Balance", "Due Date", "Status"].map((head) => <th key={head} className="px-4 py-3">{head}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((fee: any) => <tr key={fee._id} className="border-b border-black/[0.06] transition-colors hover:bg-[#f8f7f4]">
+            <td className="px-4 py-3 font-semibold">{relationName(fee.studentId)}</td>
+            <td className="px-4 py-3 text-slate-500">{relationName(fee.classSectionId)}</td>
+            <td className="px-4 py-3">{formatCurrency(fee.totalFees, fee.currency)}</td>
+            <td className="px-4 py-3">{formatCurrency(fee.paidAmount, fee.currency)}</td>
+            <td className="px-4 py-3">{formatCurrency(fee.pendingAmount, fee.currency)}</td>
+            <td className="px-4 py-3">{fee.dueDate ? new Date(fee.dueDate).toLocaleDateString() : fee.lastPaymentDate ? new Date(fee.lastPaymentDate).toLocaleDateString() : "-"}</td>
+            <td className="px-4 py-3"><Badge className={statusClass(fee.status)}>{feeLabel(fee.status)}</Badge></td>
+          </tr>)}
+        </tbody>
+      </table>
+    </div>
+  </div>;
 }
 
 function AttendanceView({ classes, students, attendance, form, setForm, onSave }: any) {
   const trend = Array.from({ length: 12 }).map((_, index) => ({ day: `${index + 1}`, present: 72 + ((index * 5) % 24) }));
-  return <div className="space-y-4"><div className="grid gap-3 md:grid-cols-3"><Metric label="Today's Attendance %" value="86%" icon={CalendarCheck} /><Metric label="Monthly Trend" value="+4.8%" icon={ActivityIcon} /><Metric label="Absent Students" value={Math.max(0, students.length - Object.values(form.records).filter((value) => value === "present").length)} icon={Users} /></div><Card className="rounded-lg"><CardHeader><CardTitle>Mark Attendance</CardTitle></CardHeader><CardContent className="space-y-3"><div className="grid gap-3 md:grid-cols-3"><NativeSelect value={form.classSectionId} onChange={(event) => setForm({ ...form, classSectionId: event.target.value, records: {} })}><option value="">Select class</option>{classes.map((klass: any) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</NativeSelect><Input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /><Button disabled={!form.classSectionId} onClick={onSave}>Save Attendance</Button></div><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">{students.map((student: any) => <label key={student._id} className="flex items-center justify-between rounded-md border p-3 text-sm"><span>{student.fullName || student.username}</span><NativeSelect value={form.records[student._id] || "present"} onChange={(event) => setForm({ ...form, records: { ...form.records, [student._id]: event.target.value } })} className="w-32"><option value="present">Present</option><option value="absent">Absent</option><option value="late">Late</option></NativeSelect></label>)}</div></CardContent></Card><div className="grid gap-4 xl:grid-cols-[1fr_0.7fr]"><Card className="rounded-lg"><CardHeader><CardTitle>Monthly Attendance Trend</CardTitle></CardHeader><CardContent className="h-72"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" /><YAxis domain={[0, 100]} /><Tooltip /><Area dataKey="present" stroke="#2563eb" fill="#bfdbfe" /></AreaChart></ResponsiveContainer></CardContent></Card><Card className="rounded-lg"><CardHeader><CardTitle>Heatmap Calendar</CardTitle></CardHeader><CardContent><div className="grid grid-cols-7 gap-2">{Array.from({ length: 35 }).map((_, index) => <span key={index} className={`h-8 rounded ${index % 7 === 0 ? "bg-red-200" : index % 5 === 0 ? "bg-yellow-200" : "bg-emerald-200"}`} title={`Day ${index + 1}`} />)}</div></CardContent></Card></div></div>;
+  const presentCount = Object.values(form.records).filter((value) => value === "present").length;
+  return <div className="space-y-5">
+    <div className="grid gap-4 md:grid-cols-3">
+      <Metric label="Today's %" value="86%" icon={CalendarCheck} />
+      <Metric label="Monthly Trend" value="+4.8%" icon={ActivityIcon} />
+      <Metric label="Absent Students" value={Math.max(0, students.length - presentCount)} icon={Users} />
+    </div>
+    <Card className="rk-card">
+      <CardHeader><CardTitle>Mark Attendance</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <NativeSelect value={form.classSectionId} onChange={(event) => setForm({ ...form, classSectionId: event.target.value, records: {} })}><option value="">Select class</option>{classes.map((klass: any) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</NativeSelect>
+          <Input className="rounded-lg border-black/[0.12]" type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
+          <Button className="rounded-lg bg-[#1a56db] text-white hover:bg-blue-700" disabled={!form.classSectionId} onClick={onSave}>Save Attendance</Button>
+        </div>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {students.map((student: any) => <label key={student._id} className="flex items-center justify-between rounded-lg border border-black/[0.08] bg-slate-50/80 p-3 text-sm">
+            <span className="font-medium">{student.fullName || student.username}</span>
+            <NativeSelect value={form.records[student._id] || "present"} onChange={(event) => setForm({ ...form, records: { ...form.records, [student._id]: event.target.value } })} className="h-9 w-32"><option value="present">Present</option><option value="absent">Absent</option><option value="late">Late</option></NativeSelect>
+          </label>)}
+        </div>
+      </CardContent>
+    </Card>
+    <div className="grid gap-4 xl:grid-cols-[1fr_0.7fr]">
+      <Card className="rk-card"><CardHeader><CardTitle>Monthly Attendance Trend</CardTitle></CardHeader><CardContent className="h-72"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trend}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.08)" /><XAxis dataKey="day" /><YAxis domain={[0, 100]} /><Tooltip /><Area type="monotone" dataKey="present" stroke="#1a56db" fill="#dbeafe" strokeWidth={2} /></AreaChart></ResponsiveContainer></CardContent></Card>
+      <Card className="rk-card"><CardHeader><CardTitle>Heatmap Calendar</CardTitle></CardHeader><CardContent><div className="grid grid-cols-7 gap-2">{Array.from({ length: 35 }).map((_, index) => <span key={index} className={`h-8 rounded ${index % 7 === 0 ? "bg-red-200" : index % 5 === 0 ? "bg-yellow-200" : "bg-emerald-200"}`} title={`Day ${index + 1}`} />)}</div><div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-500"><span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded bg-emerald-200" />90%+</span><span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded bg-yellow-200" />70-89%</span><span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded bg-red-200" />Below 70%</span></div></CardContent></Card>
+    </div>
+  </div>;
 }
 
 function NotificationsView({ rows, onEdit, onArchive }: any) {

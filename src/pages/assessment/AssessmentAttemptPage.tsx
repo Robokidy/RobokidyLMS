@@ -19,6 +19,7 @@ export default function AssessmentAttemptPage() {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [violations, setViolations] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
 
   const submit = async (method = "manual") => {
     if (!attempt || submitted) return;
@@ -34,7 +35,10 @@ export default function AssessmentAttemptPage() {
       body: JSON.stringify({ violationType, description })
     }, token);
     setViolations(data.violationCount || 0);
-    if (data.autoSubmitted) submit("auto-violation-threshold");
+    if (data.autoSubmitted) {
+      setSubmitted(true);
+      navigate("/student/tests");
+    }
   };
 
   useEffect(() => {
@@ -45,7 +49,10 @@ export default function AssessmentAttemptPage() {
       setQuestions(data.questions || []);
       setSecondsLeft(Number(data.test?.timeLimit || 30) * 60);
       document.documentElement.requestFullscreen?.().catch(() => undefined);
-    }).catch(() => navigate("/student/tests"));
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : "Could not start assessment");
+      window.setTimeout(() => navigate("/student/tests"), 1600);
+    });
   }, [token, id]);
 
   useEffect(() => {
@@ -61,18 +68,21 @@ export default function AssessmentAttemptPage() {
   useEffect(() => {
     const onBlur = () => logViolation("window-blur", "Window lost focus");
     const onVisibility = () => document.hidden && logViolation("tab-switch", "Student switched tabs");
+    const onFullscreenChange = () => !document.fullscreenElement && logViolation("window-minimize", "Student exited fullscreen");
     const block = (event: Event) => {
       event.preventDefault();
       logViolation(event.type === "contextmenu" ? "right-click" : "copy-paste", `${event.type} blocked`);
     };
     window.addEventListener("blur", onBlur);
     document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
     document.addEventListener("copy", block);
     document.addEventListener("paste", block);
     document.addEventListener("contextmenu", block);
     return () => {
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
       document.removeEventListener("copy", block);
       document.removeEventListener("paste", block);
       document.removeEventListener("contextmenu", block);
@@ -111,6 +121,7 @@ export default function AssessmentAttemptPage() {
   return (
     <StudentLmsShell title={test?.title || "Assessment"} subtitle={`Secure mode active - Time left ${timeLabel} - Violations ${violations}/3`}>
       <div className="space-y-4">
+        {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
         {questions.map((question, index) => (
           <Card key={question._id} className="rounded-lg">
             <CardHeader><CardTitle className="text-base">{index + 1}. {question.questionText}</CardTitle></CardHeader>

@@ -11,6 +11,7 @@ const StudentProgress = require("../models/StudentProgress");
 const ActivityLog = require("../models/ActivityLog");
 const Attendance = require("../models/Attendance");
 const TestAttempt = require("../models/TestAttempt");
+const Question = require("../models/Question");
 const { ensureBaseCourses } = require("../utils/courses");
 const FeeAccount = require("../models/FeeAccount");
 const { ensureFeeForStudentId, serializeFeeAccount } = require("../utils/feeManager");
@@ -253,8 +254,33 @@ router.get("/lessons", async (req, res) => {
   const assignedCourses = await getAssignedCourseIds(req.user.id);
   if (!assignedCourses.length) return res.json([]);
 
-  const lessons = await Lesson.find({ courseId: { $in: assignedCourses } }).populate("courseId", "name slug").sort({ createdAt: 1 });
-  res.json(lessons);
+  const lessons = await Lesson.find({ courseId: { $in: assignedCourses } }).populate("courseId", "name slug").sort({ createdAt: 1 }).lean();
+  const lessonIds = lessons.map((lesson) => lesson._id);
+  const [quizzes, lessonQuestions, progress] = await Promise.all([
+    Quiz.find({ lessonId: { $in: lessonIds }, active: { $ne: false } }).select("lessonId questions status isPublished").lean(),
+    Question.aggregate([
+      { $match: { lessonId: { $in: lessonIds }, active: { $ne: false } } },
+      { $group: { _id: "$lessonId", count: { $sum: 1 } } }
+    ]),
+    StudentProgress.findOne({ userId: req.user.id }).select("quizAttempts").lean()
+  ]);
+  const quizByLesson = new Map(quizzes.map((quiz) => [String(quiz.lessonId), quiz]));
+  const bankQuestionCountByLesson = new Map(lessonQuestions.map((row) => [String(row._id), row.count]));
+  const attemptByLesson = new Map((progress?.quizAttempts || []).map((attempt) => [String(attempt.lessonId), attempt]));
+
+  res.json(lessons.map((lesson) => {
+    const lessonId = String(lesson._id);
+    const quiz = quizByLesson.get(lessonId);
+    const questionCount = quiz?.questions?.length || bankQuestionCountByLesson.get(lessonId) || 0;
+    const attempt = attemptByLesson.get(lessonId);
+    return {
+      ...lesson,
+      quizAvailable: questionCount > 0,
+      quizQuestionCount: questionCount,
+      quizAttempted: Boolean(attempt?.attempts),
+      quizScore: attempt?.lastAttemptScore || 0
+    };
+  }));
 });
 
 router.get("/lessons/:id", async (req, res) => {
@@ -363,8 +389,43 @@ router.get("/quizzes/:lessonId", async (req, res) => {
     return res.status(403).json({ message: "This quiz is not assigned to you" });
   }
 
-  const quiz = await Quiz.findOne({ lessonId: req.params.lessonId });
-  res.json(quiz);
+  const progress = await StudentProgress.findOne({ userId: req.user.id }).select("quizAttempts").lean();
+  const existingAttempt = (progress?.quizAttempts || []).find((q) => String(q.lessonId) === String(req.params.lessonId));
+  const quiz = await Quiz.findOne({ lessonId: req.params.lessonId, active: { $ne: false } }).lean();
+  if (quiz?.questions?.length) {
+    return res.json({
+      ...quiz,
+      alreadyAttempted: Boolean(existingAttempt?.attempts),
+      attempt: existingAttempt || null
+    });
+  }
+
+  const bankQuestions = await Question.find({ lessonId: req.params.lessonId, active: { $ne: false } })
+    .select("questionText type options marks difficulty")
+    .sort({ createdAt: 1 })
+    .lean();
+  if (!bankQuestions.length) return res.json(null);
+
+  res.json({
+    _id: `bank-${req.params.lessonId}`,
+    lessonId: req.params.lessonId,
+    title: "Lesson Quiz",
+    questions: bankQuestions
+      .filter((question) => ["mcq", "true-false"].includes(question.type))
+      .map((question) => {
+        const options = question.options || [];
+        const correctIndex = options.findIndex((option) => option.isCorrect);
+        return {
+          question: question.questionText,
+          options: options.map((option) => option.text),
+          correctAnswer: correctIndex >= 0 ? correctIndex : 0,
+          points: question.marks || 1,
+          difficulty: question.difficulty
+        };
+      }),
+    alreadyAttempted: Boolean(existingAttempt?.attempts),
+    attempt: existingAttempt || null
+  });
 });
 
 router.post("/quizzes/:lessonId/submit", async (req, res) => {
@@ -373,11 +434,25 @@ router.post("/quizzes/:lessonId/submit", async (req, res) => {
   }
 
   const quiz = await Quiz.findOne({ lessonId: req.params.lessonId });
-  if (!quiz) return res.status(404).json({ message: "Quiz not found" });
+  let questions = quiz?.questions || [];
+  if (!questions.length) {
+    const bankQuestions = await Question.find({ lessonId: req.params.lessonId, active: { $ne: false } }).select("questionText type options marks difficulty").sort({ createdAt: 1 }).lean();
+    questions = bankQuestions
+      .filter((question) => ["mcq", "true-false"].includes(question.type))
+      .map((question) => {
+        const options = question.options || [];
+        return {
+          question: question.questionText,
+          options: options.map((option) => option.text),
+          correctAnswer: Math.max(0, options.findIndex((option) => option.isCorrect)),
+          points: question.marks || 1,
+          difficulty: question.difficulty
+        };
+      });
+  }
+  if (!questions.length) return res.status(404).json({ message: "Quiz not found" });
 
   const { answers = [] } = req.body;
-  const correct = quiz.questions.reduce((acc, q, idx) => acc + (q.correctAnswer === answers[idx] ? 1 : 0), 0);
-  const score = Math.round((correct / quiz.questions.length) * 100);
 
   const progress = await StudentProgress.findOneAndUpdate(
     { userId: req.user.id },
@@ -386,8 +461,14 @@ router.post("/quizzes/:lessonId/submit", async (req, res) => {
   );
 
   const existing = progress.quizAttempts.find((q) => String(q.lessonId) === req.params.lessonId);
+  if (existing?.attempts > 0) {
+    return res.status(409).json({ message: "You have already attempted this quiz once" });
+  }
+
+  const correct = questions.reduce((acc, q, idx) => acc + (q.correctAnswer === answers[idx] ? 1 : 0), 0);
+  const score = Math.round((correct / questions.length) * 100);
   if (existing) {
-    existing.attempts += 1;
+    existing.attempts = 1;
     existing.lastAttemptScore = score;
     existing.bestScore = Math.max(existing.bestScore, score);
   } else {
@@ -405,7 +486,11 @@ router.post("/quizzes/:lessonId/submit", async (req, res) => {
   await progress.save();
   await ActivityLog.create({ userId: req.user.id, action: "quiz_submitted", meta: { lessonId: req.params.lessonId, score } });
 
-  res.json({ score, total: quiz.questions.length, correct });
+  if (quiz) {
+    await Quiz.updateOne({ _id: quiz._id }, { $inc: { totalAttempts: 1 } });
+  }
+
+  res.json({ score, total: questions.length, correct });
 });
 
 router.get("/progress", async (req, res) => {

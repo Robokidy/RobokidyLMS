@@ -229,13 +229,34 @@ router.get("/tests", async (req, res) => {
   if (req.query.courseId) filter.courseId = req.query.courseId;
   if (req.query.classSectionId) filter.classSectionIds = req.query.classSectionId;
   if (req.query.grade) filter.grade = req.query.grade;
-  res.json(await Test.find(filter)
+  const tests = await Test.find(filter)
     .populate("courseId", "name slug")
     .populate("classSectionIds", "name grade section")
     .populate("questions", "questionText type marks difficulty tags topic")
     .sort({ createdAt: -1 })
     .limit(300)
-    .lean());
+    .lean();
+  if (scope(req).role !== "student") return res.json(tests);
+
+  const attempts = await TestAttempt.find({ studentId: userId(req), testId: { $in: tests.map((test) => test._id) } })
+    .select("testId status percentage totalMarksObtained totalMarks endTime updatedAt")
+    .sort({ createdAt: -1 })
+    .lean();
+  const attemptByTest = new Map();
+  attempts.forEach((attempt) => {
+    const key = String(attempt.testId);
+    if (!attemptByTest.has(key)) attemptByTest.set(key, attempt);
+  });
+  res.json(tests.map((test) => {
+    const attempt = attemptByTest.get(String(test._id));
+    return {
+      ...test,
+      attemptStatus: attempt?.status || "not-started",
+      alreadyAttempted: ["submitted", "evaluated"].includes(attempt?.status),
+      attemptScore: attempt ? Math.round(attempt.percentage || 0) : null,
+      attemptSubmittedAt: attempt?.endTime || attempt?.updatedAt || null
+    };
+  }));
 });
 
 router.post("/tests", async (req, res) => {
@@ -374,7 +395,7 @@ function reportRowsFromAttempts(attempts) {
     violations: attempt.violationCount || 0,
     submittedAt: attempt.endTime || attempt.updatedAt,
     answers: attempt.answers || []
-  }));
+  })).sort((a, b) => (b.percentage - a.percentage) || (b.score - a.score) || String(a.student).localeCompare(String(b.student)));
 }
 
 router.get("/reports", async (req, res) => {
@@ -402,7 +423,8 @@ router.get("/reports", async (req, res) => {
     acc[key].averageScore += row.percentage;
     if (row.passed) acc[key].passed += 1;
     return acc;
-  }, {})).map((row) => ({ ...row, averageScore: row.attempts ? Math.round(row.averageScore / row.attempts) : 0 }));
+  }, {})).map((row) => ({ ...row, averageScore: row.attempts ? Math.round(row.averageScore / row.attempts) : 0 }))
+    .sort((a, b) => b.averageScore - a.averageScore);
   const studentSummary = Object.values(rows.reduce((acc, row) => {
     const key = String(row.studentId || row.student);
     acc[key] = acc[key] || { studentId: row.studentId, student: row.student, rollNumber: row.rollNumber, attempts: 0, averageScore: 0, passed: 0 };
@@ -410,7 +432,8 @@ router.get("/reports", async (req, res) => {
     acc[key].averageScore += row.percentage;
     if (row.passed) acc[key].passed += 1;
     return acc;
-  }, {})).map((row) => ({ ...row, averageScore: row.attempts ? Math.round(row.averageScore / row.attempts) : 0 }));
+  }, {})).map((row) => ({ ...row, averageScore: row.attempts ? Math.round(row.averageScore / row.attempts) : 0 }))
+    .sort((a, b) => b.averageScore - a.averageScore);
   res.json({
     rows,
     summary: summarizeReportRows(rows),
@@ -445,14 +468,32 @@ router.get("/tests/:id/report", async (req, res) => {
       if (row.passed) acc[key].passed += 1;
       return acc;
     }, {})).map((row) => ({ ...row, averageScore: row.attempts ? Math.round(row.averageScore / row.attempts) : 0 }))
+      .sort((a, b) => b.averageScore - a.averageScore)
   });
 });
+
+function sanitizeQuestionsForStudent(questions = []) {
+  return questions.map((question) => {
+    const row = { ...question };
+    if (row.options) row.options = row.options.map(({ isCorrect, ...option }) => option);
+    if (row.codingConfig?.testCases) row.codingConfig.testCases = row.codingConfig.testCases.filter((testCase) => !testCase.isHidden);
+    return row;
+  });
+}
 
 router.post("/tests/:id/start", async (req, res) => {
   const current = scope(req);
   if (current.role !== "student") return res.status(403).json({ message: "Only students can start tests" });
   const test = await Test.findOne({ _id: req.params.id, ...testAccessFilter(req) }).populate("questions").lean();
   if (!test) return res.status(404).json({ message: "Test not found or not assigned" });
+  const existingAttempt = await TestAttempt.findOne({ testId: test._id, studentId: current.id }).sort({ createdAt: -1 });
+  if (existingAttempt && ["submitted", "evaluated"].includes(existingAttempt.status)) {
+    return res.status(409).json({ message: "You have already attempted this assessment once" });
+  }
+  const questions = sanitizeQuestionsForStudent(test.questions || []);
+  if (existingAttempt && existingAttempt.status === "in-progress") {
+    return res.json({ attempt: existingAttempt, test, questions });
+  }
   const attempt = await TestAttempt.create({
     testId: test._id,
     studentId: current.id,
@@ -464,12 +505,6 @@ router.post("/tests/:id/start", async (req, res) => {
     lastActivityTime: new Date(),
     deviceInfo: { userAgent: req.headers["user-agent"], ipAddress: req.ip }
   });
-  const questions = (test.questions || []).map((question) => {
-    const row = { ...question };
-    if (row.options) row.options = row.options.map(({ isCorrect, ...option }) => option);
-    if (row.codingConfig?.testCases) row.codingConfig.testCases = row.codingConfig.testCases.filter((testCase) => !testCase.isHidden);
-    return row;
-  });
   res.status(201).json({ attempt, test, questions });
 });
 
@@ -478,6 +513,7 @@ router.post("/attempts/:id/save", async (req, res) => {
   const attempt = await TestAttempt.findById(req.params.id);
   if (!attempt) return res.status(404).json({ message: "Attempt not found" });
   if (String(attempt.studentId) !== String(current.id)) return res.status(403).json({ message: "Cannot update this attempt" });
+  if (["submitted", "evaluated"].includes(attempt.status)) return res.status(409).json({ message: "This attempt has already been submitted" });
   const { questionId, questionType, answer, timeSpent } = req.body;
   const existing = attempt.answers.find((row) => String(row.questionId) === String(questionId));
   if (existing) {
@@ -526,6 +562,7 @@ router.post("/attempts/:id/submit", async (req, res) => {
   const attempt = await TestAttempt.findById(req.params.id);
   if (!attempt) return res.status(404).json({ message: "Attempt not found" });
   if (String(attempt.studentId) !== String(current.id)) return res.status(403).json({ message: "Cannot submit this attempt" });
+  if (["submitted", "evaluated"].includes(attempt.status)) return res.status(409).json({ message: "This attempt has already been submitted" });
   const test = await Test.findById(attempt.testId).populate("questions");
   let obtained = 0;
   let total = 0;

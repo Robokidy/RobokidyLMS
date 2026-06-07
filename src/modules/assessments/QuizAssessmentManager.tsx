@@ -69,6 +69,10 @@ function toggleValue(values: string[], value: string) {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 }
 
+function escapeHtml(value: unknown) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] || char));
+}
+
 export default function QuizAssessmentManager() {
   const { token } = useAuth();
   const { toast } = useToast();
@@ -124,6 +128,8 @@ export default function QuizAssessmentManager() {
     .map((id) => questions.find((question) => question._id === id))
     .filter(Boolean);
   const totalMarks = selectedQuestions.reduce((sum, question) => sum + Number(question.marks || 0), 0);
+  const reportRows = useMemo(() => [...(reports.rows || [])].sort((a: any, b: any) => (b.percentage - a.percentage) || (b.score - a.score)), [reports.rows]);
+  const selectedAssessment = assessments.find((assessment) => assessment._id === reportFilters.testId);
 
   const createQuestion = async () => {
     setError("");
@@ -213,7 +219,60 @@ export default function QuizAssessmentManager() {
     setTimeout(() => document.getElementById("assessment-report-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   };
 
-  const printReport = () => window.print();
+  const printReport = () => {
+    const title = selectedAssessment?.title || "Assessment Report";
+    const classAverage = reports.summary?.averageScore || 0;
+    const rowsHtml = reportRows.map((row: any, index: number) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(row.student)}</td>
+        <td>${escapeHtml(row.className || "-")}</td>
+        <td>${escapeHtml(row.test)}</td>
+        <td>${escapeHtml(row.score)} / ${escapeHtml(row.total)}</td>
+        <td>${escapeHtml(row.percentage)}%</td>
+        <td>${row.passed ? "Passed" : escapeHtml(row.status)}</td>
+      </tr>
+    `).join("");
+    const printWindow = window.open("", "_blank", "width=1000,height=700");
+    if (!printWindow) return window.print();
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>${escapeHtml(title)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; margin: 28px; }
+            h1 { margin: 0 0 6px; font-size: 24px; }
+            .muted { color: #64748b; margin: 0 0 18px; }
+            .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
+            .metric { border: 1px solid #dbe3ef; border-radius: 8px; padding: 10px; }
+            .metric span { display: block; color: #64748b; font-size: 12px; }
+            .metric strong { display: block; margin-top: 4px; font-size: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            th, td { border: 1px solid #dbe3ef; padding: 8px; text-align: left; font-size: 13px; }
+            th { background: #f1f5f9; }
+          </style>
+        </head>
+        <body>
+          <h1>${escapeHtml(title)}</h1>
+          <p class="muted">Students sorted by marks in descending order</p>
+          <div class="metrics">
+            <div class="metric"><span>Total Attempts</span><strong>${reports.summary?.attempts || 0}</strong></div>
+            <div class="metric"><span>Class Average</span><strong>${classAverage}%</strong></div>
+            <div class="metric"><span>Passed</span><strong>${reports.summary?.passed || 0}</strong></div>
+            <div class="metric"><span>Violations</span><strong>${reports.summary?.violations || 0}</strong></div>
+          </div>
+          <table>
+            <thead><tr><th>Rank</th><th>Student</th><th>Class</th><th>Assessment</th><th>Marks</th><th>Percentage</th><th>Status</th></tr></thead>
+            <tbody>${rowsHtml || `<tr><td colspan="7">No attempts found</td></tr>`}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
 
   return (
     <div className="space-y-6">
@@ -227,9 +286,9 @@ export default function QuizAssessmentManager() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.25fr_0.85fr]">
-        <Card className="rounded-lg">
+        <Card className="rk-card">
           <CardHeader>
-            <CardTitle>Quiz Question Bank</CardTitle>
+            <CardTitle>Question Builder</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Input value={questionForm.questionText} onChange={(event) => setQuestionForm({ ...questionForm, questionText: event.target.value })} placeholder="Question text" />
@@ -246,7 +305,10 @@ export default function QuizAssessmentManager() {
             {["mcq", "multi-select"].includes(questionForm.type) && (
               <div className="grid gap-2">
                 {["A", "B", "C", "D"].map((key) => (
-                  <Input key={key} value={(questionForm as any)[`option${key}`]} onChange={(event) => setQuestionForm({ ...questionForm, [`option${key}`]: event.target.value })} placeholder={`Option ${key}`} />
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-blue-50 text-sm font-bold text-[#1a56db]">{key}</span>
+                    <Input value={(questionForm as any)[`option${key}`]} onChange={(event) => setQuestionForm({ ...questionForm, [`option${key}`]: event.target.value })} placeholder={`Option ${key}`} />
+                  </div>
                 ))}
                 <NativeSelect value={questionForm.correctOption} onChange={(event) => setQuestionForm({ ...questionForm, correctOption: event.target.value })}>
                   {["A", "B", "C", "D"].map((key) => <option key={key} value={key}>Correct {key}</option>)}
@@ -278,7 +340,7 @@ export default function QuizAssessmentManager() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-lg">
+        <Card className="rk-card">
           <CardHeader>
             <CardTitle>Assessment Builder</CardTitle>
           </CardHeader>
@@ -321,12 +383,12 @@ export default function QuizAssessmentManager() {
               <Button variant="outline" onClick={() => setSelectedQuestionIds(filteredQuestions.map((question) => question._id))}>Select All</Button>
             </div>
 
-            <div className="max-h-[430px] overflow-auto rounded-md border">
+            <div className="max-h-[430px] overflow-auto rounded-[14px] border border-black/[0.08]">
               <Table>
                 <TableHeader><TableRow><TableHead className="w-10">Use</TableHead><TableHead>Question</TableHead><TableHead>Type</TableHead><TableHead>Diff</TableHead><TableHead>Marks</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {filteredQuestions.map((question) => (
-                    <TableRow key={question._id} className={selectedQuestionIds.includes(question._id) ? "bg-blue-50/70" : ""}>
+                    <TableRow key={question._id} className={selectedQuestionIds.includes(question._id) ? "bg-blue-50/70" : "hover:bg-[#f8f7f4]"}>
                       <TableCell><input type="checkbox" checked={selectedQuestionIds.includes(question._id)} onChange={(event) => setSelectedQuestionIds((current) => event.target.checked ? [...current, question._id] : current.filter((id) => id !== question._id))} /></TableCell>
                       <TableCell>{shortText(question.questionText)}</TableCell>
                       <TableCell><Badge variant="outline">{question.type}</Badge></TableCell>
@@ -350,18 +412,18 @@ export default function QuizAssessmentManager() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-lg">
+        <Card className="rk-card">
           <CardHeader>
             <CardTitle>Selected Questions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="rounded-md bg-slate-50 p-3 text-sm">
+            <div className="rounded-lg bg-slate-50 p-3 text-sm">
               <p className="font-semibold">{selectedQuestions.length} Questions | {totalMarks} Marks</p>
               <p className="text-slate-500">These questions will appear in the assessment.</p>
             </div>
             <div className="max-h-[360px] space-y-2 overflow-auto">
               {selectedQuestions.map((question, index) => (
-                <div key={question._id} className="rounded-md border p-3 text-sm">
+                <div key={question._id} className="rounded-lg border border-black/[0.08] bg-white p-3 text-sm">
                   <div className="flex items-start justify-between gap-2">
                     <p><span className="font-semibold">Q{index + 1}.</span> {shortText(question.questionText, 72)}</p>
                     <button className="text-red-600" onClick={() => setSelectedQuestionIds((current) => current.filter((id) => id !== question._id))}>x</button>
@@ -369,13 +431,13 @@ export default function QuizAssessmentManager() {
                   <div className="mt-2 flex gap-2 text-xs text-slate-500"><Badge variant="secondary">{question.type}</Badge><span>{question.marks}m</span></div>
                 </div>
               ))}
-              {!selectedQuestions.length && <p className="text-sm text-slate-500">Select questions from the middle panel.</p>}
+              {!selectedQuestions.length && <div className="rounded-lg border border-dashed border-black/[0.12] py-10 text-center text-sm text-slate-500"><FileQuestion className="mx-auto mb-2 h-6 w-6 text-slate-300" />Select questions from the middle panel.</div>}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="rounded-lg">
+      <Card className="rk-card">
         <CardHeader><CardTitle>Assessments</CardTitle></CardHeader>
         <CardContent>
           <Table>
@@ -403,7 +465,7 @@ export default function QuizAssessmentManager() {
         </CardContent>
       </Card>
 
-      <Card id="assessment-report-section" className="rounded-lg">
+      <Card id="assessment-report-section" className="rk-card">
         <CardHeader><CardTitle>Reports</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 md:grid-cols-4 print:hidden">
@@ -423,7 +485,7 @@ export default function QuizAssessmentManager() {
           </div>
           <div className="grid gap-3 md:grid-cols-4">
             <Badge className="justify-center py-2">Attempts: {reports.summary?.attempts || 0}</Badge>
-            <Badge className="justify-center py-2">Average: {reports.summary?.averageScore || 0}%</Badge>
+            <Badge className="justify-center py-2">Class Average: {reports.summary?.averageScore || 0}%</Badge>
             <Badge className="justify-center py-2">Passed: {reports.summary?.passed || 0}</Badge>
             <Badge className="justify-center py-2">Violations: {reports.summary?.violations || 0}</Badge>
           </div>
@@ -433,10 +495,11 @@ export default function QuizAssessmentManager() {
           </div>
           <div className="overflow-auto rounded-md border">
             <Table>
-              <TableHeader><TableRow><TableHead>Student</TableHead><TableHead>Class</TableHead><TableHead>Assessment</TableHead><TableHead>Score</TableHead><TableHead>Status</TableHead><TableHead>Violations</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Rank</TableHead><TableHead>Student</TableHead><TableHead>Class</TableHead><TableHead>Assessment</TableHead><TableHead>Marks</TableHead><TableHead>Status</TableHead><TableHead>Violations</TableHead></TableRow></TableHeader>
               <TableBody>
-                {(reports.rows || []).map((row: any) => (
+                {reportRows.map((row: any, index: number) => (
                   <TableRow key={row._id}>
+                    <TableCell>{index + 1}</TableCell>
                     <TableCell>{row.student}</TableCell>
                     <TableCell>{row.className || "-"}</TableCell>
                     <TableCell>{row.test}</TableCell>
@@ -456,10 +519,10 @@ export default function QuizAssessmentManager() {
 
 function Metric({ label, value, icon: Icon }: any) {
   return (
-    <Card className="rounded-lg">
+    <Card className="rk-card">
       <CardContent className="flex items-center justify-between p-4">
-        <div><p className="text-sm text-slate-500">{label}</p><p className="text-2xl font-bold">{value}</p></div>
-        <Icon className="h-5 w-5 text-blue-600" />
+        <div><p className="rk-label">{label}</p><p className="text-[28px] font-extrabold tracking-tight">{value}</p></div>
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-50 text-[#1a56db]"><Icon className="h-5 w-5" /></span>
       </CardContent>
     </Card>
   );
@@ -467,8 +530,8 @@ function Metric({ label, value, icon: Icon }: any) {
 
 function CheckboxGroup({ title, items, selected, onToggle }: any) {
   return (
-    <div className="rounded-md border p-3">
-      <p className="mb-2 text-sm font-semibold">{title}</p>
+    <div className="rounded-lg border border-black/[0.08] bg-slate-50/80 p-3">
+      <p className="rk-label mb-2">{title}</p>
       <div className="max-h-36 space-y-2 overflow-auto pr-1">
         {items.map((item: any) => (
           <label key={item.value} className="flex items-center gap-2 text-sm">
@@ -505,5 +568,5 @@ function ReportTable({ title, rows, columns }: any) {
 }
 
 function NativeSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`h-10 rounded-md border bg-background px-3 text-sm ${props.className || ""}`} />;
+  return <select {...props} className={`h-[38px] rounded-lg border border-black/[0.12] bg-white px-3 text-sm ${props.className || ""}`} />;
 }
