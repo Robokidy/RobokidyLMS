@@ -42,6 +42,8 @@ const assessmentRoutes = require("./routes/assessmentRoutes");
 const materialRoutes = require("./routes/materialRoutes");
 const academicReportRoutes = require("./routes/academicReportRoutes");
 const marketingRoutes = require("./routes/marketingRoutes");
+const certificateRoutes = require("./routes/certificateRoutes");
+const setupRoutes = require("./routes/setupRoutes");
 
 function optionalRoute(path) {
   try {
@@ -106,6 +108,8 @@ app.use("/api/content", contentRoutes);
 app.use("/api/assessments", assessmentRoutes);
 app.use("/api/reports", academicReportRoutes);
 app.use("/api/marketing", marketingRoutes);
+app.use("/api/certificates", certificateRoutes);
+app.use("/api/setup", setupRoutes);
 if (feeRoutes) app.use("/api/fees", feeRoutes);
 if (examRoutes) app.use("/api/exams", examRoutes);
 if (testRoutes) app.use("/api/tests", testRoutes);

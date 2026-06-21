@@ -27,6 +27,8 @@ import AdminCompetitionsPage from "@/pages/admin/AdminCompetitionsPage";
 import AdminAssessmentManagementPage from "@/pages/admin/AdminAssessmentManagementPage";
 import AdminSchoolReportsPage from "@/pages/admin/AdminSchoolReportsPage";
 import AdminCertificatesPage from "@/pages/admin/AdminCertificatesPage";
+import StudentCertificatesPage from "@/pages/certificates/StudentCertificatesPage";
+import VerifyCertificatePage from "@/pages/certificates/VerifyCertificatePage";
 import AssessmentCenterPage from "@/pages/assessment/AssessmentCenterPage";
 import AssessmentAttemptPage from "@/pages/assessment/AssessmentAttemptPage";
 import CeoDashboard from "@/pages/admin/CeoDashboard";
@@ -57,6 +59,8 @@ const App = () => (
         <Route path="/" element={<Navigate to="/login" />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
+        <Route path="/verify" element={<VerifyCertificatePage />} />
+        <Route path="/verify/:certificateId" element={<VerifyCertificatePage />} />
         <Route path="/student" element={<ProtectedRoute role="student"><StudentAutoRedirect /></ProtectedRoute>} />
         <Route path="/student/dashboard" element={<ProtectedRoute role="student"><StudentDashboard /></ProtectedRoute>} />
         <Route path="/student/lessons" element={<ProtectedRoute role="student"><LessonsPage /></ProtectedRoute>} />
@@ -70,6 +74,7 @@ const App = () => (
         <Route path="/student/tests/:id" element={<ProtectedRoute role="student"><AssessmentAttemptPage /></ProtectedRoute>} />
         <Route path="/student/code" element={<ProtectedRoute role="student"><CodeLabPage /></ProtectedRoute>} />
         <Route path="/student/codelab" element={<ProtectedRoute role="student"><CodeLabPage /></ProtectedRoute>} />
+        <Route path="/student/certificates" element={<ProtectedRoute role="student"><StudentCertificatesPage /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute role="admin"><CeoDashboard /></ProtectedRoute>} />
         <Route path="/admin/marketing" element={<ProtectedRoute role="admin"><MarketingDashboard /></ProtectedRoute>} />
         <Route path="/admin/schools" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
@@ -91,6 +96,8 @@ const App = () => (
         <Route path="/admin/analytics" element={<ProtectedRoute role="admin"><AdminAnalyticsPage /></ProtectedRoute>} />
         <Route path="/admin/ai-tutor" element={<ProtectedRoute role="admin"><AdminAiTutorPage /></ProtectedRoute>} />
         <Route path="/admin/competitions" element={<ProtectedRoute role="admin"><AdminCompetitionsPage /></ProtectedRoute>} />
+        <Route path="/admin/certificates" element={<ProtectedRoute role="admin"><AdminCertificatesPage /></ProtectedRoute>} />
+        <Route path="/admin/certificates/:section" element={<ProtectedRoute role="admin"><AdminCertificatesPage /></ProtectedRoute>} />
         <Route path="/admin/content" element={<ProtectedRoute role="admin"><UnifiedCurriculumPage shell="admin" /></ProtectedRoute>} />
         <Route path="/cto" element={<ProtectedRoute role="cto"><CeoDashboard /></ProtectedRoute>} />
         <Route path="/cto/marketing" element={<ProtectedRoute role="cto"><MarketingDashboard /></ProtectedRoute>} />
@@ -112,6 +119,7 @@ const App = () => (
         <Route path="/cto/progress" element={<ProtectedRoute role="cto"><AdminProgressPage /></ProtectedRoute>} />
         <Route path="/cto/analytics" element={<ProtectedRoute role="cto"><AdminAnalyticsPage /></ProtectedRoute>} />
         <Route path="/cto/certificates" element={<ProtectedRoute role="cto"><AdminCertificatesPage /></ProtectedRoute>} />
+        <Route path="/cto/certificates/:section" element={<ProtectedRoute role="cto"><AdminCertificatesPage /></ProtectedRoute>} />
         <Route path="/cto/ai-tutor" element={<ProtectedRoute role="cto"><AdminAiTutorPage /></ProtectedRoute>} />
         <Route path="/cto/competitions" element={<ProtectedRoute role="cto"><AdminCompetitionsPage /></ProtectedRoute>} />
         <Route path="/cto/content" element={<ProtectedRoute role="cto"><UnifiedCurriculumPage shell="admin" /></ProtectedRoute>} />
@@ -131,6 +139,7 @@ const App = () => (
           <Route path="quizzes" element={<TeacherQuizAssessmentPage />} />
           <Route path="assessments" element={<TeacherQuizAssessmentPage />} />
           <Route path="certificates" element={<TeacherCertificatesPage />} />
+          <Route path="certificates/:section" element={<TeacherCertificatesPage />} />
           <Route path="materials" element={<UnifiedMaterialsPage shell="teacher" />} />
           <Route path="lessons" element={<UnifiedCurriculumPage shell="teacher" />} />
           <Route path="coding" element={<CodingPage />} />

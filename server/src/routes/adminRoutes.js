@@ -183,7 +183,6 @@ function commonFilters(query, extra = {}) {
   }
   return filter;
 }
-
 function dateFilter(query, field = "date") {
   if (!query.dateFrom && !query.dateTo) return {};
   const filter = {};
@@ -193,6 +192,15 @@ function dateFilter(query, field = "date") {
   return filter;
 }
 
+function normalizeAttendanceDate(value) {
+  const source = value ? new Date(value) : new Date();
+  if (Number.isNaN(source.getTime())) return null;
+  return new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth(), source.getUTCDate()));
+}
+
+function attendanceStatus(value) {
+  return ["present", "absent", "late", "excused"].includes(value) ? value : "present";
+}
 function ensureUploadDir() {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
@@ -694,37 +702,62 @@ router.get("/attendance", async (req, res) => {
   const filter = {};
   if (req.query.schoolId) filter.schoolId = req.query.schoolId;
   if (req.query.classSectionId) filter.classSectionId = req.query.classSectionId;
-  if (req.query.studentId) filter.studentId = req.query.studentId;
-  if (req.query.status || req.query.attendanceStatus) filter.status = req.query.status || req.query.attendanceStatus;
-  Object.assign(filter, dateFilter(req.query));
-  res.json(await Attendance.find(filter).populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("studentId", "username fullName rollNumber").sort({ date: -1 }).limit(1000).lean());
+  if (req.query.date) {
+    const day = normalizeAttendanceDate(req.query.date);
+    if (!day) return res.status(400).json({ message: "Valid attendance date is required" });
+    filter.date = day;
+  } else if (req.query.from || req.query.to || req.query.dateFrom || req.query.dateTo) {
+    filter.date = {};
+    const from = normalizeAttendanceDate(req.query.from || req.query.dateFrom);
+    const to = normalizeAttendanceDate(req.query.to || req.query.dateTo);
+    if (from) filter.date.$gte = from;
+    if (to) filter.date.$lte = to;
+  }
+  if (req.query.studentId) filter.$or = [{ studentId: req.query.studentId }, { "students.studentId": req.query.studentId }];
+  if (req.query.status || req.query.attendanceStatus) {
+    const status = req.query.status || req.query.attendanceStatus;
+    filter.$or = [...(filter.$or || []), { status }, { "students.status": status }];
+  }
+
+  const rows = await Attendance.find(filter)
+    .populate("schoolId", "name code")
+    .populate("classSectionId", "name grade section")
+    .populate("studentId", "username fullName rollNumber")
+    .populate("teacherId", "username fullName")
+    .populate("markedBy", "username fullName")
+    .populate("students.studentId", "username fullName rollNumber profilePhotoUrl")
+    .sort({ date: -1 })
+    .limit(1000)
+    .lean();
+  res.json(rows);
 });
 
 router.post("/attendance", async (req, res) => {
-  const rows = Array.isArray(req.body.records) ? req.body.records : [];
-  const date = new Date(req.body.date || Date.now());
+  const rows = Array.isArray(req.body.students) ? req.body.students : Array.isArray(req.body.records) ? req.body.records : [];
+  const date = normalizeAttendanceDate(req.body.date);
+  if (!date) return res.status(400).json({ message: "Valid attendance date is required" });
   const classSection = await ClassSection.findById(req.body.classSectionId);
   if (!classSection) return res.status(400).json({ message: "Valid class is required" });
-  const writes = rows.map((row) => ({
-    updateOne: {
-      filter: { classSectionId: classSection._id, studentId: row.studentId, date },
-      update: {
-        $set: {
-          schoolId: classSection.schoolId,
-          classSectionId: classSection._id,
-          studentId: row.studentId,
-          date,
-          status: ["present", "absent", "late", "leave", "excused"].includes(row.status) ? row.status : "present",
-          remarks: safeText(row.remarks),
-          markedBy: req.user.id
-        }
-      },
-      upsert: true
-    }
-  }));
-  if (writes.length) await Attendance.bulkWrite(writes);
-  await ActivityLog.create({ userId: req.user.id, action: "attendance_marked", meta: { classSectionId: classSection._id, count: writes.length } });
-  res.json({ updated: writes.length });
+  const studentIds = rows.map((row) => row.studentId).filter((id) => id);
+  const rosterCount = await User.countDocuments({ _id: { $in: studentIds }, role: "student", active: { $ne: false }, schoolId: classSection.schoolId, classSectionIds: classSection._id });
+  if (!studentIds.length || rosterCount !== studentIds.length) return res.status(400).json({ message: "Attendance can only be saved for students in this class" });
+
+  const record = await Attendance.findOneAndUpdate(
+    { recordType: "class-day", classSectionId: classSection._id, date },
+    {
+      recordType: "class-day",
+      schoolId: classSection.schoolId,
+      classSectionId: classSection._id,
+      date,
+      teacherId: req.user.id,
+      markedBy: req.user.id,
+      markedAt: new Date(),
+      students: rows.map((row) => ({ studentId: row.studentId, status: attendanceStatus(row.status), note: safeText(row.note || row.remarks) }))
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("teacherId", "username fullName").populate("students.studentId", "username fullName rollNumber profilePhotoUrl").lean();
+  await ActivityLog.create({ userId: req.user.id, action: "attendance_marked", meta: { classSectionId: classSection._id, count: rows.length } });
+  res.json(record);
 });
 
 router.get("/attendance/reports", async (req, res) => {

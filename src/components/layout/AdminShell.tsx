@@ -33,7 +33,7 @@ function navForRole(role?: string) {
         { label: "Materials", href: `${base}/materials`, icon: BookMarked },
         { label: "Quiz Center", href: `${base}/quizzes`, icon: FileQuestion },
         { label: "Assessment Center", href: `${base}/assessments`, icon: ClipboardList },
-        ...(role === "cto" ? [{ label: "Certificates", href: `${base}/certificates`, icon: Award }] : [])
+        { label: "Certificates", href: `${base}/certificates`, icon: Award }
       ]
     },
     {

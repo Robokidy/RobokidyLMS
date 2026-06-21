@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import type { SelectHTMLAttributes } from "react";
-import { BarChart3, CheckSquare, ClipboardList, FileQuestion, Plus, Printer, Trash2 } from "lucide-react";
+import type { SelectHTMLAttributes } from 'react';
+import * as XLSX from 'xlsx';
+import { BarChart3, CheckSquare, ClipboardList, FileQuestion, Plus, FileSpreadsheet, Trash2 } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
@@ -219,6 +220,21 @@ export default function QuizAssessmentManager() {
     setTimeout(() => document.getElementById("assessment-report-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   };
 
+
+  const exportReportXlsx = () => {
+    const rows = reportRows.map((row: any) => ({
+      "Student Name": row.student || "-",
+      Class: row.className || "-",
+      "Assessment Name": row.test || selectedAssessment?.title || "Assessment",
+      Score: Number(row.percentage ?? row.score ?? 0),
+      "Status (Pass/Fail)": row.passed ? "Pass" : "Fail",
+      "Date Attempted": row.submittedAt ? new Date(row.submittedAt).toLocaleDateString() : row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"
+    }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows.length ? rows : [{ "Student Name": "No attempts found", Class: "", "Assessment Name": "", Score: "", "Status (Pass/Fail)": "", "Date Attempted": "" }]), "Assessment Report");
+    const name = (selectedAssessment?.title || "all-assessments").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "assessment";
+    XLSX.writeFile(workbook, `assessment-report-${name}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
   const printReport = () => {
     const title = selectedAssessment?.title || "Assessment Report";
     const classAverage = reports.summary?.averageScore || 0;
@@ -481,7 +497,7 @@ export default function QuizAssessmentManager() {
               <option value="">All students</option>
               {(reports.studentSummary || []).map((student: any) => <option key={student.studentId || student.student} value={student.studentId}>{student.student}</option>)}
             </NativeSelect>
-            <Button variant="outline" onClick={printReport}><Printer className="mr-2 h-4 w-4" />Print Report</Button>
+            <Button variant="outline" onClick={exportReportXlsx}><FileSpreadsheet className="mr-2 h-4 w-4" />Export XLSX</Button>
           </div>
           <div className="grid gap-3 md:grid-cols-4">
             <Badge className="justify-center py-2">Attempts: {reports.summary?.attempts || 0}</Badge>

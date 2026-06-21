@@ -1,6 +1,6 @@
-import { BookOpen, Code, FileText, GraduationCap, LayoutDashboard, type LucideIcon } from "lucide-react";
+import { Award, BookOpen, Code, FileText, GraduationCap, LayoutDashboard, type LucideIcon } from "lucide-react";
 
-export type StudentNavModule = "dashboard" | "lessons" | "materials" | "quiz" | "tests" | "codelab";
+export type StudentNavModule = "dashboard" | "lessons" | "materials" | "quiz" | "tests" | "certificates" | "codelab";
 
 export const studentNavConfig: Record<StudentNavModule, { label: string; href: string; icon: LucideIcon }> = {
   dashboard: { label: "Dashboard", href: "/student/dashboard", icon: LayoutDashboard },
@@ -8,12 +8,13 @@ export const studentNavConfig: Record<StudentNavModule, { label: string; href: s
   materials: { label: "Materials", href: "/student/materials", icon: FileText },
   quiz: { label: "Quiz", href: "/student/quizzes", icon: GraduationCap },
   tests: { label: "Tests", href: "/student/tests", icon: GraduationCap },
+  certificates: { label: "Certificates", href: "/student/certificates", icon: Award },
   codelab: { label: "Code Lab", href: "/student/code", icon: Code }
 };
 
-export const studentNavOrder: StudentNavModule[] = ["dashboard", "lessons", "materials", "quiz", "tests", "codelab"];
+export const studentNavOrder: StudentNavModule[] = ["dashboard", "lessons", "materials", "quiz", "tests", "certificates", "codelab"];
 
-export const studentDefaultModules: StudentNavModule[] = ["dashboard", "lessons", "materials", "quiz", "tests"];
+export const studentDefaultModules: StudentNavModule[] = ["dashboard", "lessons", "materials", "quiz", "tests", "certificates"];
 
 export function getStudentNavItems(enabledModules: StudentNavModule[] = []) {
   const allowed = new Set(enabledModules.length ? enabledModules : studentDefaultModules);
@@ -26,6 +27,7 @@ export function getStudentLandingRoute(allowedRoutes: string[] = []) {
   if (allowedRoutes.includes("/student/materials")) return "/student/materials";
   if (allowedRoutes.includes("/student/quizzes")) return "/student/quizzes";
   if (allowedRoutes.includes("/student/tests")) return "/student/tests";
+  if (allowedRoutes.includes("/student/certificates")) return "/student/certificates";
   if (allowedRoutes.includes("/student/code")) return "/student/code";
   return "/student/lessons";
 }

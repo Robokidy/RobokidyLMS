@@ -101,13 +101,21 @@ async function canAccessClass(req, classSectionId) {
   const scope = teacherScope(req);
   return scope.classSectionIds.includes(String(classSectionId));
 }
-
 async function canAccessStudent(req, studentId) {
   const scope = teacherScope(req);
   const student = await User.findOne({ _id: studentId, role: "student", active: { $ne: false }, schoolId: { $in: scope.schoolIds }, classSectionIds: { $in: scope.classSectionIds } });
   return student;
 }
 
+function normalizeAttendanceDate(value) {
+  const source = value ? new Date(value) : new Date();
+  if (Number.isNaN(source.getTime())) return null;
+  return new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth(), source.getUTCDate()));
+}
+
+function attendanceStatus(value) {
+  return ["present", "absent", "late", "excused"].includes(value) ? value : "present";
+}
 router.get("/dashboard", async (req, res) => {
   const scope = teacherScope(req);
   const classObjectIds = scope.classSectionIds.filter((id) => isValidObjectId(id));
@@ -519,39 +527,65 @@ router.post("/attendance", async (req, res) => {
   if (!(await canAccessClass(req, req.body.classSectionId))) return res.status(403).json({ message: "Class is not assigned to you" });
   const classSection = await ClassSection.findById(req.body.classSectionId).select("schoolId").lean();
   if (!classSection) return res.status(400).json({ message: "Valid class is required" });
-  const rows = Array.isArray(req.body.records) ? req.body.records : [];
-  const date = new Date(req.body.date || Date.now());
-  const writes = rows.map((row) => ({
-    updateOne: {
-      filter: { classSectionId: req.body.classSectionId, studentId: row.studentId, date },
-      update: {
-        $set: {
-          schoolId: classSection.schoolId,
-          classSectionId: req.body.classSectionId,
-          studentId: row.studentId,
-          date,
-          status: row.status,
-          remarks: row.remarks || "",
-          markedBy: req.user.id
-        }
-      },
-      upsert: true
-    }
-  }));
-  if (writes.length) await Attendance.bulkWrite(writes);
-  await ActivityLog.create({ userId: req.user.id, action: "attendance_marked", meta: { classSectionId: req.body.classSectionId, count: writes.length } });
-  res.json({ updated: writes.length });
+  const date = normalizeAttendanceDate(req.body.date);
+  if (!date) return res.status(400).json({ message: "Valid attendance date is required" });
+  const rows = Array.isArray(req.body.students) ? req.body.students : Array.isArray(req.body.records) ? req.body.records : [];
+  const studentIds = rows.map((row) => row.studentId).filter((id) => isValidObjectId(id));
+  const rosterCount = await User.countDocuments({ _id: { $in: studentIds }, role: "student", active: { $ne: false }, schoolId: { $in: teacherScope(req).schoolIds }, classSectionIds: req.body.classSectionId });
+  if (!studentIds.length || rosterCount !== studentIds.length) return res.status(400).json({ message: "Attendance can only be saved for students in this class" });
+
+  const record = await Attendance.findOneAndUpdate(
+    { recordType: "class-day", classSectionId: classSection._id, date },
+    {
+      recordType: "class-day",
+      schoolId: classSection.schoolId,
+      classSectionId: classSection._id,
+      date,
+      teacherId: req.user.id,
+      markedBy: req.user.id,
+      markedAt: new Date(),
+      students: rows.map((row) => ({ studentId: row.studentId, status: attendanceStatus(row.status), note: safeText(row.note || row.remarks) }))
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).populate("schoolId", "name code").populate("classSectionId", "name grade section").populate("teacherId", "username fullName").populate("students.studentId", "username fullName rollNumber profilePhotoUrl").lean();
+
+  await ActivityLog.create({ userId: req.user.id, action: "attendance_marked", meta: { classSectionId: req.body.classSectionId, count: rows.length } });
+  res.json(record);
 });
 
 router.get("/attendance", async (req, res) => {
   const scope = teacherScope(req);
   const filter = { schoolId: { $in: scope.schoolIds }, classSectionId: { $in: scope.classSectionIds } };
   if (req.query.classSectionId && scope.classSectionIds.includes(String(req.query.classSectionId))) filter.classSectionId = req.query.classSectionId;
-  if (req.query.status) filter.status = req.query.status;
-  if (req.query.dateFrom || req.query.dateTo) filter.date = {};
-  if (req.query.dateFrom) filter.date.$gte = new Date(req.query.dateFrom);
-  if (req.query.dateTo) filter.date.$lte = new Date(req.query.dateTo);
-  res.json(await Attendance.find(filter).populate("studentId", "username fullName").populate("classSectionId", "name grade section").sort({ date: -1 }).limit(500).lean());
+  if (req.query.date) {
+    const day = normalizeAttendanceDate(req.query.date);
+    if (!day) return res.status(400).json({ message: "Valid attendance date is required" });
+    filter.date = day;
+  } else if (req.query.from || req.query.to || req.query.dateFrom || req.query.dateTo) {
+    filter.date = {};
+    const from = normalizeAttendanceDate(req.query.from || req.query.dateFrom);
+    const to = normalizeAttendanceDate(req.query.to || req.query.dateTo);
+    if (from) filter.date.$gte = from;
+    if (to) filter.date.$lte = to;
+  }
+  if (req.query.studentId) filter.$or = [{ studentId: req.query.studentId }, { "students.studentId": req.query.studentId }];
+
+  const rows = await Attendance.find(filter)
+    .populate("schoolId", "name code")
+    .populate("classSectionId", "name grade section")
+    .populate("studentId", "username fullName rollNumber")
+    .populate("teacherId", "username fullName")
+    .populate("markedBy", "username fullName")
+    .populate("students.studentId", "username fullName rollNumber profilePhotoUrl")
+    .sort({ date: -1 })
+    .limit(500)
+    .lean();
+
+  const status = req.query.status;
+  const filtered = status
+    ? rows.map((row) => row.recordType === "class-day" ? { ...row, students: (row.students || []).filter((student) => student.status === status) } : row).filter((row) => row.recordType === "class-day" ? row.students.length : row.status === status)
+    : rows;
+  res.json(filtered);
 });
 
 router.get("/work-logs", async (req, res) => {

@@ -12,6 +12,7 @@
     "noImplicitAny": false,
     "noUnusedParameters": false,
     "skipLibCheck": true,
+    "ignoreDeprecations": "5.0",
     "allowJs": true,
     "noUnusedLocals": false,
     "strictNullChecks": false

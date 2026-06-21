@@ -9,11 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ClassFeeView } from "@/components/fees";
-
 function formatCurrency(amount: any, currency = "INR") {
   return `${currency === "INR" ? "Rs." : currency} ${Number(amount || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
+function flattenAttendance(records: any[]) {
+  return records.flatMap((record) => record.recordType === "class-day"
+    ? (record.students || []).map((entry: any) => ({ ...entry, _id: `${record._id}-${entry.studentId?._id || entry.studentId}`, date: record.date, classSectionId: record.classSectionId, markedBy: record.teacherId || record.markedBy }))
+    : [record]);
+}
 export default function ClassDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -57,11 +61,11 @@ export default function ClassDetailsPage() {
     students: students.length,
     assignments: assignments.length,
     materials: materials.length,
-    attendanceEntries: attendance.length
+    attendanceEntries: flattenAttendance(attendance).length
   }), [students.length, assignments.length, materials.length, attendance.length]);
 
   if (loading) {
-    return <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">Loading class details…</div>;
+    return <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">Loading class detailsâ€¦</div>;
   }
 
   if (!klass) {
@@ -75,7 +79,7 @@ export default function ClassDetailsPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Class details</p>
             <h2 className="mt-2 text-3xl font-semibold">{klass.name}</h2>
-            <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-400">Grade {klass.grade} • Section {klass.section} • {klass.subjects?.join(", ") || "No subject assigned"}</p>
+            <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-400">Grade {klass.grade} â€¢ Section {klass.section} â€¢ {klass.subjects?.join(", ") || "No subject assigned"}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Badge variant="secondary">{klass.active ? "Active" : "Inactive"}</Badge>
@@ -133,7 +137,7 @@ export default function ClassDetailsPage() {
                     {students.map((student) => (
                       <TableRow key={student._id}>
                         <TableCell>{student.fullName || student.username}</TableCell>
-                        <TableCell>{student.rollNumber || "—"}</TableCell>
+                        <TableCell>{student.rollNumber || "â€”"}</TableCell>
                         <TableCell><Badge variant={student.active ? "default" : "secondary"}>{student.active ? "Active" : "Inactive"}</Badge></TableCell>
                       </TableRow>
                     ))}
@@ -149,7 +153,7 @@ export default function ClassDetailsPage() {
           </TabsContent>
           <TabsContent value="attendance" className="mt-4">
             <div className="space-y-4">
-              {attendance.length ? (
+              {flattenAttendance(attendance).length ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -159,7 +163,7 @@ export default function ClassDetailsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {attendance.map((record) => (
+                    {flattenAttendance(attendance).map((record) => (
                       <TableRow key={`${record._id}-${record.date}`}>
                         <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
                         <TableCell>{record.studentId?.fullName || record.studentId?.username || "Unknown"}</TableCell>
@@ -211,7 +215,7 @@ export default function ClassDetailsPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Card className="rounded-3xl">
                 <CardHeader className="flex items-center justify-between gap-2"><CardTitle>Track metrics</CardTitle><Code className="h-4 w-4" /></CardHeader>
-                <CardContent>{(klass.courseTrackIds || []).map((track: any) => <div key={track._id} className="mb-2 last:mb-0"><p className="font-semibold">{track.trackName || track.trackCode}</p><p className="text-sm text-slate-500">Grade {track.grade || "—"}</p></div>)}</CardContent>
+                <CardContent>{(klass.courseTrackIds || []).map((track: any) => <div key={track._id} className="mb-2 last:mb-0"><p className="font-semibold">{track.trackName || track.trackCode}</p><p className="text-sm text-slate-500">Grade {track.grade || "â€”"}</p></div>)}</CardContent>
               </Card>
               <Card className="rounded-3xl">
                 <CardHeader className="flex items-center justify-between gap-2"><CardTitle>Recent student activity</CardTitle><Activity className="h-4 w-4" /></CardHeader>

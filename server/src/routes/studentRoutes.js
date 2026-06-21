@@ -218,8 +218,8 @@ router.get("/dashboard", async (req, res) => {
     getStudentAccess(req.user.id),
     getStudentProfile(req.user.id)
   ]);
-  const enabledModules = ["dashboard", "lessons", "materials", "quiz", "tests", ...(hasPythonAccess ? ["codelab"] : [])];
-  const allowedRoutes = ["/student/dashboard", "/student/lessons", "/student/materials", "/student/quizzes", "/student/tests", ...(hasPythonAccess ? ["/student/code"] : [])];
+  const enabledModules = ["dashboard", "lessons", "materials", "quiz", "tests", "certificates", ...(hasPythonAccess ? ["codelab"] : [])];
+  const allowedRoutes = ["/student/dashboard", "/student/lessons", "/student/materials", "/student/quizzes", "/student/tests", "/student/certificates", ...(hasPythonAccess ? ["/student/code"] : [])];
 
   res.json({
     totalLessons,
