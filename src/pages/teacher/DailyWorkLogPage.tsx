@@ -89,15 +89,15 @@ export default function DailyWorkLogPage() {
   };
 
   const submit = async () => {
-    if (!form.schoolId || !form.classSectionId || !form.lessonId) return toast.error("Select school, class, and curriculum lesson");
+    if (!form.schoolId || !form.classSectionId || !form.lessonId) return toast.error("Please choose a class and lesson first");
     setSaving(true);
     try {
       await apiFetch("/teacher/work-logs", { method: "POST", body: form }, token);
-      toast.success("Daily work log submitted");
+      toast.success("Thanks, your work log is saved");
       setForm({ ...form, topicCovered: "", materialsUsed: "", materialIds: [], assessmentConducted: false, assessmentId: "", assessmentSummary: "", homeworkGiven: "", remarks: "" });
       await load();
     } catch (error: any) {
-      toast.error(error.message || "Unable to submit work log");
+      toast.error(error.message || "We could not save the work log. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -105,7 +105,7 @@ export default function DailyWorkLogPage() {
 
   return <div className="space-y-5">
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <div><p className="text-xs uppercase tracking-[0.24em] text-slate-500">Daily Work Log</p><h2 className="mt-2 text-3xl font-semibold">Teaching activity submission</h2></div>
+      <div><p className="text-xs uppercase tracking-[0.24em] text-slate-500">Daily Work Log</p><h2 className="mt-2 text-3xl font-semibold">Today's class notes</h2><p className="mt-1 text-sm text-slate-500">Choose the class and lesson you taught today, then add a short note before you submit.</p></div>
       <Badge variant={submittedToday ? "default" : "secondary"}>{submittedToday ? "Submitted today" : "Pending today"}</Badge>
     </div>
 
@@ -118,7 +118,7 @@ export default function DailyWorkLogPage() {
       <Card className="rounded-lg"><CardContent className="p-4"><FileText className="mb-2 h-4 w-4 text-slate-500" /><p className="text-sm text-slate-500">Assessments</p><p className="text-2xl font-bold">{logs.filter((row) => row.assessmentConducted).length}</p></CardContent></Card>
     </div>
 
-    <Card className="rounded-lg"><CardHeader><CardTitle>New Entry</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-2">
+    <Card className="rounded-lg"><CardHeader><CardTitle>New class note</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-2">
       <Field label="Date"><Input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} /></Field>
       <Field label="Class"><NativeSelect value={form.classSectionId} onChange={(event) => updateClass(event.target.value)}><option value="">Select class</option>{classes.map((klass) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</NativeSelect></Field>
       <Field label="School"><Input value={relationName(selectedClass?.schoolId)} readOnly /></Field>
@@ -134,9 +134,9 @@ export default function DailyWorkLogPage() {
       <div className="md:col-span-2"><Field label="Assessment Score Summary"><Input value={form.assessmentSummary} onChange={(event) => setForm({ ...form, assessmentSummary: event.target.value })} placeholder="Average score, pass count, or short observation" /></Field></div>
       <div className="md:col-span-2"><Field label="Homework Given"><Textarea value={form.homeworkGiven} onChange={(event) => setForm({ ...form, homeworkGiven: event.target.value })} /></Field></div>
       <div className="md:col-span-2"><Field label="Remarks"><Textarea value={form.remarks} onChange={(event) => setForm({ ...form, remarks: event.target.value })} /></Field></div>
-      <Button className="md:col-span-2" disabled={saving} onClick={submit}><Plus className="mr-2 h-4 w-4" />{saving ? "Submitting..." : "Submit Work Log"}</Button>
+      <Button className="md:col-span-2" disabled={saving} onClick={submit}><Plus className="mr-2 h-4 w-4" />{saving ? "Saving..." : "Save today's work log"}</Button>
     </CardContent></Card>
 
-    <Card className="rounded-lg"><CardHeader><CardTitle>Recent Submissions</CardTitle></CardHeader><CardContent className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="bg-slate-50 text-left text-slate-500"><tr>{["Date", "School", "Class", "Course", "Lesson", "Duration", "Status"].map((head) => <th key={head} className="px-3 py-2">{head}</th>)}</tr></thead><tbody>{logs.map((row) => <tr key={row._id} className="border-t"><td className="px-3 py-2">{row.date ? new Date(row.date).toLocaleDateString() : "-"}</td><td className="px-3 py-2">{relationName(row.schoolId)}</td><td className="px-3 py-2">{relationName(row.classSectionId)}</td><td className="px-3 py-2">{relationName(row.courseId)}</td><td className="px-3 py-2">{row.lessonConducted || relationName(row.lessonId)}</td><td className="px-3 py-2">{row.durationMinutes || 0} min</td><td className="px-3 py-2"><Badge variant="outline">{row.status}</Badge></td></tr>)}</tbody></table></CardContent></Card>
+    <Card className="rounded-lg"><CardHeader><CardTitle>Recent saved notes</CardTitle></CardHeader><CardContent className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="bg-slate-50 text-left text-slate-500"><tr>{["Date", "School", "Class", "Course", "Lesson", "Duration", "Status"].map((head) => <th key={head} className="px-3 py-2">{head}</th>)}</tr></thead><tbody>{logs.map((row) => <tr key={row._id} className="border-t"><td className="px-3 py-2">{row.date ? new Date(row.date).toLocaleDateString() : "-"}</td><td className="px-3 py-2">{relationName(row.schoolId)}</td><td className="px-3 py-2">{relationName(row.classSectionId)}</td><td className="px-3 py-2">{relationName(row.courseId)}</td><td className="px-3 py-2">{row.lessonConducted || relationName(row.lessonId)}</td><td className="px-3 py-2">{row.durationMinutes || 0} min</td><td className="px-3 py-2"><Badge variant="outline">{row.status}</Badge></td></tr>)}</tbody></table></CardContent></Card>
   </div>;
 }

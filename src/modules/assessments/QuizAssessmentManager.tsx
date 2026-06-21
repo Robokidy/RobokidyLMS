@@ -87,6 +87,7 @@ export default function QuizAssessmentManager() {
   const [filters, setFilters] = useState({ search: "", courseId: "", lessonId: "", difficulty: "", type: "" });
   const [reportFilters, setReportFilters] = useState({ testId: "", studentId: "", classId: "" });
   const [error, setError] = useState("");
+  const [actionLoading, setActionLoading] = useState("");
 
   const reportQuery = (next = reportFilters) => {
     const params = new URLSearchParams();
@@ -134,6 +135,7 @@ export default function QuizAssessmentManager() {
 
   const createQuestion = async () => {
     setError("");
+    setActionLoading("question");
     try {
       const optionValues = [questionForm.optionA, questionForm.optionB, questionForm.optionC, questionForm.optionD];
       const options = questionForm.type === "true-false"
@@ -168,6 +170,8 @@ export default function QuizAssessmentManager() {
       await load();
     } catch (err: any) {
       setError(err.message || "Could not add question");
+    } finally {
+      setActionLoading("");
     }
   };
 
@@ -179,6 +183,7 @@ export default function QuizAssessmentManager() {
 
   const createAssessment = async (status = assessmentForm.status) => {
     setError("");
+    setActionLoading(status === "published" ? "publish-new" : "draft");
     try {
       await apiFetch("/assessments/tests", {
         method: "POST",
@@ -202,12 +207,19 @@ export default function QuizAssessmentManager() {
       await load();
     } catch (err: any) {
       setError(err.message || "Could not create assessment");
+    } finally {
+      setActionLoading("");
     }
   };
 
   const publishAssessment = async (id: string) => {
-    await apiFetch(`/assessments/tests/${id}/publish`, { method: "POST" }, token);
-    await load();
+    setActionLoading(`publish-${id}`);
+    try {
+      await apiFetch(`/assessments/tests/${id}/publish`, { method: "POST" }, token);
+      await load();
+    } finally {
+      setActionLoading("");
+    }
   };
 
   const deleteAssessment = async (id: string) => {
@@ -350,8 +362,8 @@ export default function QuizAssessmentManager() {
               <option value="">Lesson for this quiz</option>
               {meta.lessons.map((lesson: any) => <option key={lesson._id} value={lesson._id}>{lesson.title}</option>)}
             </NativeSelect>
-            <Button className="w-full" onClick={createQuestion} disabled={!questionForm.questionText.trim()}>
-              <Plus className="mr-2 h-4 w-4" />Add Question
+            <Button className="w-full" onClick={createQuestion} disabled={!questionForm.questionText.trim() || actionLoading === "question"}>
+              <Plus className="mr-2 h-4 w-4" />{actionLoading === "question" ? "Adding..." : "Add Question"}
             </Button>
           </CardContent>
         </Card>
@@ -422,8 +434,8 @@ export default function QuizAssessmentManager() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button disabled={!assessmentForm.title.trim() || !selectedQuestionIds.length} onClick={() => createAssessment("draft")}>Save Draft</Button>
-              <Button disabled={!assessmentForm.title.trim() || !selectedQuestionIds.length} onClick={() => createAssessment("published")}>Publish</Button>
+              <Button disabled={!assessmentForm.title.trim() || !selectedQuestionIds.length || actionLoading === "draft"} onClick={() => createAssessment("draft")}>{actionLoading === "draft" ? "Saving..." : "Save Draft"}</Button>
+              <Button disabled={!assessmentForm.title.trim() || !selectedQuestionIds.length || actionLoading === "publish-new"} onClick={() => createAssessment("published")}>{actionLoading === "publish-new" ? "Publishing..." : "Publish"}</Button>
             </div>
           </CardContent>
         </Card>
@@ -469,9 +481,9 @@ export default function QuizAssessmentManager() {
                   <TableCell>{assessment.totalAttempts || 0}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      {assessment.status !== "published" && <Button size="sm" variant="outline" onClick={() => publishAssessment(assessment._id)}>Publish</Button>}
+                      {assessment.status !== "published" && <Button size="sm" variant="outline" disabled={actionLoading === `publish-${assessment._id}`} onClick={() => publishAssessment(assessment._id)}>{actionLoading === `publish-${assessment._id}` ? "Publishing..." : "Publish"}</Button>}
                       <Button size="sm" variant="outline" onClick={() => viewAssessmentReport(assessment._id)}>Report</Button>
-                      <Button size="sm" variant="destructive" onClick={() => deleteAssessment(assessment._id)}><Trash2 className="h-4 w-4" /></Button>
+                      <Button size="sm" variant="destructive" disabled={actionLoading === `delete-assessment-${assessment._id}`} onClick={() => deleteAssessment(assessment._id)}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
