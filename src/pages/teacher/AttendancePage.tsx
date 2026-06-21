@@ -3,7 +3,6 @@ import { CalendarCheck, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/api/client";
-import { teacherApi } from "@/services/teacherApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 const statuses = ["present", "absent", "late", "excused"];
+
+type AttendancePageProps = {
+  apiBase?: "/teacher" | "/admin";
+  title?: string;
+};
 
 function dateOnly(value: any) {
   if (!value) return "";
@@ -41,11 +45,17 @@ function flattenAttendance(records: any[]) {
   });
 }
 
-export default function AttendancePage() {
-  const { token } = useAuth();
+function className(klass: any) {
+  return klass?.name || [klass?.grade, klass?.section].filter(Boolean).join(" - ") || "Class";
+}
+
+export default function AttendancePage({ apiBase, title = "Class attendance" }: AttendancePageProps) {
+  const { token, user } = useAuth();
+  const resolvedApiBase = apiBase || (user?.role === "teacher" ? "/teacher" : "/admin");
   const [records, setRecords] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [classFilter, setClassFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -61,14 +71,21 @@ export default function AttendancePage() {
   const [message, setMessage] = useState("");
 
   const refreshAttendance = async () => {
-    const attendanceRows = await teacherApi.attendance({}, token);
+    const params = new URLSearchParams();
+    if (classFilter) params.set("classSectionId", classFilter);
+    if (dateFilter) params.set("date", dateFilter);
+    const query = params.toString();
+    const attendanceRows = await apiFetch(`${resolvedApiBase}/attendance${query ? `?${query}` : ""}`, {}, token);
     setRecords(attendanceRows || []);
   };
 
   useEffect(() => {
     if (!token) return;
     setLoading(true);
-    Promise.all([teacherApi.attendance({}, token), teacherApi.classes(token)])
+    Promise.all([
+      apiFetch(`${resolvedApiBase}/attendance`, {}, token),
+      apiFetch(`${resolvedApiBase}/classes`, {}, token)
+    ])
       .then(([attendanceRows, classRows]) => {
         setRecords(attendanceRows || []);
         setClasses(classRows || []);
@@ -79,7 +96,7 @@ export default function AttendancePage() {
         setMessage("We could not load attendance yet. Please try again in a moment.");
       })
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, resolvedApiBase]);
 
   useEffect(() => {
     if (!selectedClass || !showMarkDialog) {
@@ -92,11 +109,14 @@ export default function AttendancePage() {
       setStudentsLoading(true);
       setMessage("");
       try {
+        const studentsPromise = resolvedApiBase === "/teacher"
+          ? apiFetch(`/teacher/classes/${selectedClass}/students`, {}, token)
+          : apiFetch(`/admin/students?classSectionId=${encodeURIComponent(selectedClass)}`, {}, token);
         const [students, existingRows] = await Promise.all([
-          apiFetch(`/teacher/classes/${selectedClass}/students`, {}, token),
-          teacherApi.attendance({ classSectionId: selectedClass, date: attendanceDate }, token)
+          studentsPromise,
+          apiFetch(`${resolvedApiBase}/attendance?classSectionId=${encodeURIComponent(selectedClass)}&date=${encodeURIComponent(attendanceDate)}`, {}, token)
         ]);
-        const roster = students || [];
+        const roster = (students || []).filter((student: any) => (student.classSectionIds || []).some ? (student.classSectionIds || []).some((klass: any) => String(klass._id || klass) === selectedClass) : true);
         const existing = (existingRows || []).find((row: any) => row.recordType === "class-day") || existingRows?.[0];
         const savedStatuses = new Map((existing?.students || []).map((entry: any) => [String(entry.studentId?._id || entry.studentId), entry.status]));
         const statusesByStudent: Record<string, string> = {};
@@ -116,7 +136,7 @@ export default function AttendancePage() {
     };
 
     loadStudentsAndRecord();
-  }, [selectedClass, attendanceDate, showMarkDialog, token]);
+  }, [selectedClass, attendanceDate, showMarkDialog, token, resolvedApiBase]);
 
   const flatRecords = useMemo(() => flattenAttendance(records), [records]);
   const filteredRecords = useMemo(() => {
@@ -124,11 +144,12 @@ export default function AttendancePage() {
       if (classFilter && String(record.classSectionId?._id || record.classSectionId) !== classFilter) return false;
       if (statusFilter && record.status !== statusFilter) return false;
       const recordDate = dateOnly(record.date);
-      if (dateFrom && recordDate < dateFrom) return false;
-      if (dateTo && recordDate > dateTo) return false;
+      if (dateFilter && recordDate !== dateFilter) return false;
+      if (!dateFilter && dateFrom && recordDate < dateFrom) return false;
+      if (!dateFilter && dateTo && recordDate > dateTo) return false;
       return true;
     });
-  }, [flatRecords, classFilter, statusFilter, dateFrom, dateTo]);
+  }, [flatRecords, classFilter, statusFilter, dateFilter, dateFrom, dateTo]);
 
   const visibleStudents = useMemo(() => {
     const query = search.toLowerCase();
@@ -153,10 +174,12 @@ export default function AttendancePage() {
     setMarking(true);
     setMessage("");
     try {
-      await apiFetch("/teacher/attendance", { method: "POST", body: { classSectionId: selectedClass, date: attendanceDate, students } }, token);
+      await apiFetch(`${resolvedApiBase}/attendance`, { method: "POST", body: { classSectionId: selectedClass, date: attendanceDate, students } }, token);
       await refreshAttendance();
       toast.success("Attendance saved", { description: "The class record is updated for this date." });
-      setMessage("Attendance saved. The history below is updated.");
+      setClassFilter(selectedClass);
+      setDateFilter(attendanceDate);
+      setMessage("Attendance saved. The history below is updated for this class and date.");
       setShowMarkDialog(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Attendance could not be saved. Your marks are still here.");
@@ -169,29 +192,39 @@ export default function AttendancePage() {
     setStudentStatuses((current) => ({ ...current, [studentId]: status }));
   };
 
+  const clearFilters = () => {
+    setClassFilter("");
+    setDateFilter("");
+    setDateFrom("");
+    setDateTo("");
+    setStatusFilter("");
+  };
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Attendance</p>
-            <h2 className="mt-2 text-3xl font-semibold">Class attendance</h2>
-            <p className="mt-1 text-sm text-slate-500">Select your class and date, then mark each student below.</p>
+            <h2 className="mt-2 text-3xl font-semibold">{title}</h2>
+            <p className="mt-1 text-sm text-slate-500">Select a class and date to mark or review student attendance.</p>
           </div>
           <Button onClick={() => setShowMarkDialog(true)}><CalendarCheck className="mr-2 h-4 w-4" />Mark attendance</Button>
         </div>
         {message && <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">{message}</div>}
-        <div className="mt-6 grid gap-3 sm:grid-cols-4">
+        <div className="mt-6 grid gap-3 lg:grid-cols-6">
           <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50">
-            <option value="">All classes</option>
-            {classes.map((klass) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}
+            <option value="">Search by class</option>
+            {classes.map((klass) => <option key={klass._id} value={klass._id}>{className(klass)}</option>)}
           </select>
+          <Input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} title="Specific date" />
+          <Input type="date" value={dateFrom} disabled={Boolean(dateFilter)} onChange={(event) => setDateFrom(event.target.value)} title="From date" />
+          <Input type="date" value={dateTo} disabled={Boolean(dateFilter)} onChange={(event) => setDateTo(event.target.value)} title="To date" />
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50">
             <option value="">All statuses</option>
             {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
-          <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-          <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+          <Button variant="outline" onClick={clearFilters}>Clear</Button>
         </div>
       </section>
 
@@ -207,7 +240,7 @@ export default function AttendancePage() {
             <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Student</TableHead><TableHead>Class</TableHead><TableHead>Status</TableHead><TableHead>Marked by</TableHead></TableRow></TableHeader>
             <TableBody>{filteredRecords.map((record) => <TableRow key={`${record._id}-${record.date}`}><TableCell>{new Date(record.date).toLocaleDateString()}</TableCell><TableCell>{studentName(record.studentId)}</TableCell><TableCell>{record.classSectionId?.name || "-"}</TableCell><TableCell><Badge variant={record.status === "present" ? "default" : "secondary"}>{record.status}</Badge></TableCell><TableCell>{record.markedBy?.fullName || record.markedBy?.username || "-"}</TableCell></TableRow>)}</TableBody>
           </Table>
-        ) : <div className="py-10 text-center text-sm text-slate-500">No attendance recorded for this filter yet.</div>}
+        ) : <div className="py-10 text-center text-sm text-slate-500">No attendance recorded for this class/date filter yet.</div>}
       </section>
 
       <Dialog open={showMarkDialog} onOpenChange={setShowMarkDialog}>
@@ -215,7 +248,7 @@ export default function AttendancePage() {
           <DialogHeader><DialogTitle>Mark attendance</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm font-medium">Class<select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"><option value="">Select a class</option>{classes.map((klass) => <option key={klass._id} value={klass._id}>{klass.name}</option>)}</select></label>
+              <label className="grid gap-2 text-sm font-medium">Class<select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"><option value="">Select a class</option>{classes.map((klass) => <option key={klass._id} value={klass._id}>{className(klass)}</option>)}</select></label>
               <label className="grid gap-2 text-sm font-medium">Date<Input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} /></label>
             </div>
             {selectedClass && classStudents.length > 15 && <div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search students" /></div>}

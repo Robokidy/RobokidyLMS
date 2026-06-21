@@ -82,7 +82,7 @@ const App = () => (
         <Route path="/admin/teachers" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/admin/classes" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/admin/fees" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
-        <Route path="/admin/attendance" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
+        <Route path="/admin/attendance" element={<ProtectedRoute role="admin"><AttendancePage apiBase="/admin" title="Student attendance" /></ProtectedRoute>} />
         <Route path="/admin/notifications" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/admin/settings" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/admin/students" element={<ProtectedRoute role="admin"><AdminSchoolsPage /></ProtectedRoute>} />
@@ -106,7 +106,7 @@ const App = () => (
         <Route path="/cto/teachers" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/cto/classes" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/cto/students" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
-        <Route path="/cto/attendance" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
+        <Route path="/cto/attendance" element={<ProtectedRoute role="cto"><AttendancePage apiBase="/admin" title="Student attendance" /></ProtectedRoute>} />
         <Route path="/cto/fees" element={<ProtectedRoute role="cto"><Navigate to="/cto/students" replace /></ProtectedRoute>} />
         <Route path="/cto/notifications" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
         <Route path="/cto/settings" element={<ProtectedRoute role="cto"><AdminSchoolsPage /></ProtectedRoute>} />
